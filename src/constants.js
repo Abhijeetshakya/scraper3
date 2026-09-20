@@ -64,10 +64,14 @@ export const CHALLENGE_MARKERS = [
     // LinkedIn's sign-in wall. Verified against a live gated response: it
     // carries none of the markers above, arrives with HTTP 200, and parses
     // into a company record whose name is "Sign in" and whose every other
-    // field is null. Nothing but these strings distinguishes it from a real
-    // page at the body level.
+    // field is null.
+    //
+    // The title is the only body string that separates the two. 'session_redirect='
+    // looks like a better marker and is a trap: a normal company page carries
+    // it 69 times, once per "Sign in" link in its own chrome, so matching on it
+    // rejects every real page. Body markers here must appear ONLY on the wall -
+    // anything a logged-out company page also renders is disqualified.
     '<title>LinkedIn Login, Sign in',
-    'session_redirect=',
 ];
 
 /**

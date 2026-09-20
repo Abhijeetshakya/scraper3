@@ -240,8 +240,17 @@ console.log('\n🧪 Testing isChallengePage()');
     // field null. It carries none of the older markers and arrives as HTTP 200.
     assert(isChallengePage('<title>LinkedIn Login, Sign in | LinkedIn</title>') === true,
         'detects the sign-in wall by its page title');
-    assert(isChallengePage('<a href="/x?session_redirect=%2Fcompany%2Fx">') === true,
-        'detects the sign-in wall by its session_redirect parameter');
+    // Regression: a normal company page renders its own "Sign in" chrome, and
+    // carries session_redirect= 69 times on a live Microsoft fetch. Matching on
+    // that string rejected every real page - a body marker is only valid if the
+    // wall has it and an ordinary logged-out page does not.
+    const pageWithSignInChrome = '<title>Microsoft | LinkedIn</title>'
+        + '<a href="/login?session_redirect=%2Fcompany%2Fmicrosoft">Sign in</a>'.repeat(20)
+        + '<h1>Microsoft</h1>';
+    assert(isChallengePage(pageWithSignInChrome) === false,
+        'a real page is not flagged for carrying its own sign-in links');
+    assert(isChallengePage('<title>LinkedIn Login, Sign in | LinkedIn</title>' + pageWithSignInChrome) === true,
+        'the wall is still caught when the title says so');
 }
 
 // ─── isWalledUrl() ───────────────────────────────────────────────────
