@@ -465,6 +465,13 @@ console.log('\n🧪 Testing expandToLocationRows()');
     const none = expandToLocationRows({ companyId: 'x', name: 'X', success: true, locations: [] });
     assert(none.length === 1 && none[0].city === null, 'still emits one row for a company with no offices');
     assert(/no office locations/i.test(none[0].error), 'explains why the campus fields are empty');
+
+    // Same shape results from a cache entry written with includeLocations off,
+    // which is why main.js refuses such an entry in location mode rather than
+    // reporting a cache artifact as a finding.
+    const missing = expandToLocationRows({ companyId: 'x', name: 'X', success: true });
+    assert(missing.length === 1 && missing[0].locationCount === 0,
+        'a row with no locations key is indistinguishable from one with no offices');
 }
 
 // ─── findDeep() / extractTotal() ─────────────────────────────────────

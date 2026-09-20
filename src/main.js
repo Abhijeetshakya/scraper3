@@ -367,7 +367,12 @@ const crawler = new CheerioCrawler({
 const toCrawl = [];
 for (const ref of targets) {
     const cached = cacheTtlDays > 0 ? await Actor.getValue(cacheKey(ref.companyId, ref.pageType)) : null;
-    if (isCacheFresh(cached, cacheTtlDays)) {
+    // A row cached by a run with includeLocations off carries no campus list.
+    // Serving it in location mode would emit one row claiming the company
+    // declares no offices - a cache artifact presented as a finding. Re-fetch
+    // instead of answering a question this entry cannot answer.
+    const cacheUsable = outputMode !== 'location' || Array.isArray(cached?.locations);
+    if (cacheUsable && isCacheFresh(cached, cacheTtlDays)) {
         log.info(`Cache hit (<${cacheTtlDays}d) for ${ref.companyId}; skipping fetch.`);
         await emitRow({ ...cached, fromCache: true });
         continue;
