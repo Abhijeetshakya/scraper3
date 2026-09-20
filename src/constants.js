@@ -61,6 +61,29 @@ export const CHALLENGE_MARKERS = [
     'id="captcha"',
     'class="challenge-dialog"',
     'unusual activity from your account',
+    // LinkedIn's sign-in wall. Verified against a live gated response: it
+    // carries none of the markers above, arrives with HTTP 200, and parses
+    // into a company record whose name is "Sign in" and whose every other
+    // field is null. Nothing but these strings distinguishes it from a real
+    // page at the body level.
+    '<title>LinkedIn Login, Sign in',
+    'session_redirect=',
+];
+
+/**
+ * Path fragments that mean a request was redirected to a wall rather than the
+ * page asked for.
+ *
+ * Checked against the *final* URL, which is the sturdier signal: the gated
+ * response is a 200 at the end of a redirect chain to /uas/login, so only the
+ * landing URL reliably says what happened. Body markers are the backstop.
+ */
+export const WALLED_URL_PATTERNS = [
+    '/uas/login',
+    '/login?',
+    '/authwall',
+    '/checkpoint/',
+    '/signup/',
 ];
 
 /**

@@ -44,7 +44,7 @@ The country breakdown is the reason this Actor exists. Everything else is availa
 - 🛡️ **Built to protect the account you give it.** Authenticated calls are strictly serialised, jittered, pinned to one sticky proxy session, and bounded by a request budget you set. One block ends the authenticated pass instead of grinding through the rest of your list confirming it.
 - 🧠 **It tells you when a sweep was cut short.** `countryScan.stopReason` and `countryScan.coverage` distinguish a complete sweep from a truncated one, so a partial breakdown is never mistaken for a full one.
 - 💾 **Caching that actually saves money.** Firmographics and country distribution change slowly. A configurable TTL (default 7 days) reuses a stored row instead of re-spending authenticated request budget on an unchanged company.
-- ✅ **Tested.** 117 automated tests cover the parsers, the scan logic, and the schema contract.
+- ✅ **Tested.** 130 automated tests cover the parsers, the scan logic, and the schema contract.
 
 ---
 
@@ -195,7 +195,9 @@ These caveats are not fine print — they change what the numbers mean:
 - **Per-country figures will not sum to `totalEmployeesOnLinkedIn`.** Members who list no location appear in the total and in no country bucket; members with overlapping listed attributes can appear in more than one. `percentOfTotal` is computed against LinkedIn's own total rather than the bucket sum, precisely so a partial sweep does not look complete.
 - **Check `countryScan.stopReason` before treating a breakdown as exhaustive.** `listExhausted` means the full country list was swept. `coverageReached`, `emptyTail`, and `countryLimit` all mean the sweep stopped early — usually correctly, but the tail was not enumerated.
 - **`companySizeRange` and `employeeCount` are different numbers on the same page.** The first is LinkedIn's bucketed band; the second is its exact member count. Only the second is usable as a denominator.
-- **Not every field is populated for every company.** Smaller pages often lack specialties, addresses, or a ticker. Absent fields are `null`, never `""`.
+- **Some fields are simply not on the guest page.** Verified against a live fetch of `linkedin.com/company/microsoft`: the public About panel serves website, industry, company size, headquarters, type and specialties — and nothing else. `foundedYear`, `phone`, `stockSymbol` and `tagline` are absent from both the visible panel and the embedded JSON-LD, so they come back `null` for most companies. The parsers read them when a page does publish them; they do not invent them.
+- **`jobOpeningsCount` is null unless the page links its own jobs tab.** It is deliberately *not* read from the "Browse jobs" rail at the bottom of the page — those are LinkedIn-wide keyword searches (Microsoft's page carries a "710,029 open jobs" link that has nothing to do with Microsoft's postings).
+- **Not every field is populated for every company.** Smaller pages often lack specialties or addresses. Absent fields are `null`, never `""`.
 - **`sourceType` tells you which half you got.** `"public"` means no cookie was used and `countryBreakdown` is `null`; `"authenticated"` means the breakdown is real. Rows can be `success: true` with a populated `error` when the profile succeeded but the breakdown did not.
 
 ---
@@ -250,6 +252,9 @@ Members who list no location are counted in the total and in no country. This is
 **Can I pass showcase or school pages?**
 Yes. Both are accepted and reported via `pageType`. Showcase pages are sub-brands and typically carry far fewer employees than their parent.
 
+**Why did my run return one row?**
+Because this Actor returns **one row per company**, not one row per result page. One input URL means one row — that is the whole output, not a truncated run. Pass more URLs in `companyUrls` to get more rows.
+
 **What happens if one company fails?**
 That row comes back with `success: false` and an `error` string. Every input company produces exactly one row — a missing row would be indistinguishable from a company that was never in the list.
 
@@ -284,7 +289,9 @@ npm install && npm test && npm start
 - **One request per country.** A complete global sweep is inherently slow. The early-stop heuristics reduce it a great deal but cannot remove it.
 - **Counts are LinkedIn profiles, not verified headcount.** Treat as directional.
 - **LinkedIn changes its markup and its internal API.** Parsers prefer JSON-LD and search response envelopes by key rather than by fixed path, so both degrade gracefully, but a field can still go `null` after a LinkedIn change.
-- **Guest pages are sometimes gated.** LinkedIn serves auth walls with HTTP 200; these are detected and retried with a fresh session, but a persistently gated company returns `success: false`.
+- **Guest pages are sometimes gated.** LinkedIn serves sign-in walls as an HTTP **200** at the end of a redirect to `/uas/login`, so neither the status code nor the requested URL reveals them. Both the landing URL and the response body are checked; a walled page is retried with a fresh session, and a persistently gated company returns `success: false` rather than a row that claims success and carries nothing.
+- **Do not request `/company/<slug>/about/`.** That suffix is walled for guests while the base `/company/<slug>` is not — and the base page carries the entire About panel anyway. This Actor always requests the base URL; the note is here because it is a genuinely surprising asymmetry if you build against this API yourself.
+- **Use residential proxies even without a cookie.** Datacenter IPs raise the odds of being walled on the public lane, not just the authenticated one.
 - **Recent updates and featured employees are samples**, limited to what the public page renders. Neither is a complete feed or a roster.
 
 ---

@@ -1,5 +1,5 @@
 import { promises as dns } from 'node:dns';
-import { LINKEDIN_BASE, PAGE_TYPE_PREFIXES, CHALLENGE_MARKERS, DEFAULTS } from './constants.js';
+import { LINKEDIN_BASE, PAGE_TYPE_PREFIXES, CHALLENGE_MARKERS, WALLED_URL_PATTERNS, DEFAULTS } from './constants.js';
 
 /**
  * Collapse whitespace and trim. Returns '' for nullish input.
@@ -103,13 +103,22 @@ export function normalizeCompanyUrl(entry) {
 }
 
 /**
- * The guest-accessible about page for a canonical company URL.
+ * The guest-accessible page for a canonical company URL.
+ *
+ * Returns the base URL, and deliberately does NOT append /about/.
+ *
+ * That suffix is what an about-page scraper reaches for, and it is a trap:
+ * LinkedIn serves /company/<slug>/about/ to guests as a redirect to
+ * /uas/login, with HTTP 200, while /company/<slug> returns the real page.
+ * Verified against both live. The base page carries the entire About panel
+ * anyway - website, industry, company size, headquarters, type, specialties -
+ * so the suffix costs the whole row and buys nothing.
  *
  * @param {string} companyUrl
  * @returns {string}
  */
-export function buildAboutUrl(companyUrl) {
-    return `${companyUrl.replace(/\/+$/, '')}/about/`;
+export function buildCompanyPageUrl(companyUrl) {
+    return companyUrl.replace(/\/+$/, '');
 }
 
 /**
@@ -133,6 +142,21 @@ export function extractOrgId(html) {
     if (urn) return urn[1];
     const numericPath = html.match(/\/company\/(\d{4,})(?:[/"?]|$)/);
     return numericPath ? numericPath[1] : null;
+}
+
+/**
+ * Detect a wall from the URL a request actually landed on.
+ *
+ * Sturdier than sniffing the body: the gated response is a 200 at the end of a
+ * redirect chain, so the landing URL is the part that says what happened.
+ *
+ * @param {string|null|undefined} url - The final URL after redirects
+ * @returns {boolean}
+ */
+export function isWalledUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const lower = url.toLowerCase();
+    return WALLED_URL_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
 /**

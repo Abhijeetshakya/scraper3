@@ -13,8 +13,8 @@ import {
 } from './parsers.js';
 import { findDeep, extractTotal, VoyagerClient, VoyagerBlockedError, VoyagerBudgetError } from './voyager.js';
 import {
-    cleanText, nullIfEmpty, parseCount, normalizeCompanyUrl, buildAboutUrl, extractOrgId,
-    isChallengePage, makeCsrfPair, shouldStopScan, finalizeBreakdown, applyToggles,
+    cleanText, nullIfEmpty, parseCount, normalizeCompanyUrl, buildCompanyPageUrl, extractOrgId,
+    isChallengePage, isWalledUrl, makeCsrfPair, shouldStopScan, finalizeBreakdown, applyToggles,
     cacheKey, isCacheFresh,
 } from './utils.js';
 import { DEFAULT_COUNTRY_SCAN } from './constants.js';
@@ -75,7 +75,7 @@ const SAMPLE_ABOUT_HTML = `
       <div class="org-top-card-summary-info-list__info-item">4,213 associated members</div>
       <div class="org-top-card-summary-info-list__info-item">182,405 followers</div>
     </div>
-    <a href="/company/acme-corp/jobs/">See all 57 jobs</a>
+    <a href="/company/acme-corp/jobs/" data-tracking-control-name="org-jobs_see-all">See all 57 jobs</a>
   </section>
 
   <section class="core-section-container about-us">
@@ -84,7 +84,7 @@ const SAMPLE_ABOUT_HTML = `
       <div data-test-id="about-us__website"><dt>Website</dt><dd><a href="https://www.linkedin.com/redir/redirect?url=https%3A%2F%2Fwww%2Eacme-corp%2Eexample&amp;urlhash=abcd">acme-corp.example</a></dd></div>
       <div data-test-id="about-us__phone"><dt>Phone</dt><dd>+1 555 0100</dd></div>
       <div data-test-id="about-us__industry"><dt>Industry</dt><dd>Industrial Machinery Manufacturing</dd></div>
-      <div data-test-id="about-us__companySize"><dt>Company size</dt><dd>1,001-5,000 employees</dd></div>
+      <div data-test-id="about-us__size"><dt>Company size</dt><dd>1,001-5,000 employees</dd></div>
       <div data-test-id="about-us__headquarters"><dt>Headquarters</dt><dd>Fairfield, NJ</dd></div>
       <div data-test-id="about-us__organizationType"><dt>Type</dt><dd>Public Company</dd></div>
       <div data-test-id="about-us__foundedOn"><dt>Founded</dt><dd>1952</dd></div>
@@ -92,28 +92,53 @@ const SAMPLE_ABOUT_HTML = `
     </dl>
   </section>
 
-  <section data-test-id="about-us__locations">
+  <section class="core-section-container">
     <h2>Locations</h2>
-    <ul>
-      <li>1 Anvil Way, Fairfield, NJ 07004, US</li>
-      <li>12 Pitfall Road, Dublin, D02, IE</li>
-      <li>88 Rocket Lane, Bengaluru, KA, IN</li>
+    <ul data-impression-id="org-locations_show-more-less">
+      <li>
+        <span class="tag-sm tag-enabled">Primary</span>
+        <div id="address-0"><p>1 Anvil Way</p><p>Fairfield, NJ 07004, US</p></div>
+        <a data-tracking-control-name="org-locations_url" href="https://www.bing.com/maps?where=x">Get directions</a>
+      </li>
+      <li>
+        <div id="address-1"><p>12 Pitfall Road</p><p>Dublin, D02, IE</p></div>
+        <a data-tracking-control-name="org-locations_url" href="https://www.bing.com/maps?where=y">Get directions</a>
+      </li>
+      <li>
+        <div id="address-2"><p>88 Rocket Lane</p><p>Bengaluru, KA, IN</p></div>
+      </li>
     </ul>
   </section>
 
-  <section class="affiliated-companies">
+  <section class="aside-section-container">
     <h2>Affiliated pages</h2>
-    <ul>
-      <li class="base-card"><a href="https://www.linkedin.com/company/acme-europe?trk=x"><h3 class="base-main-card__title">Acme Europe</h3></a></li>
-      <li class="base-card"><a href="/showcase/acme-rockets/"><h3 class="base-main-card__title">Acme Rockets</h3></a></li>
+    <ul data-impression-id="affiliated-pages_show-more-less">
+      <li><a href="https://www.linkedin.com/company/acme-europe?trk=affiliated-pages" class="base-card base-aside-card">
+        <img alt>
+        <div class="base-aside-card__info">
+          <h3 class="base-aside-card__title">Acme Europe</h3>
+          <p class="base-aside-card__subtitle">Industrial Machinery Manufacturing</p>
+          <p class="base-aside-card__second-subtitle">Dublin, IE</p>
+        </div></a></li>
+      <li><a href="/showcase/acme-rockets/?trk=affiliated-pages" class="base-card base-aside-card">
+        <div class="base-aside-card__info"><h3 class="base-aside-card__title">Acme Rockets</h3>
+        <p class="base-aside-card__subtitle">Aviation and Aerospace</p></div></a></li>
     </ul>
   </section>
 
-  <section class="similar-pages">
+  <section class="aside-section-container">
     <h2>Similar pages</h2>
-    <ul>
-      <li class="base-card"><a href="/company/globex/"><h3 class="base-main-card__title">Globex</h3></a></li>
+    <ul data-impression-id="similar-pages_show-more-less">
+      <li><a href="/company/globex/?trk=similar-pages" class="base-card base-aside-card">
+        <div class="base-aside-card__info"><h3 class="base-aside-card__title">Globex</h3>
+        <p class="base-aside-card__subtitle">Industrial Machinery Manufacturing</p></div></a></li>
     </ul>
+  </section>
+
+  <section class="browse-jobs">
+    <h2>Browse jobs</h2>
+    <a href="https://www.linkedin.com/jobs/anvil-jobs?trk=org">Anvil jobs 710,029 open jobs</a>
+    <a href="https://www.linkedin.com/jobs/engineer-jobs?trk=org">Engineer jobs 555,845 open jobs</a>
   </section>
 
   <section class="feed">
@@ -163,9 +188,15 @@ console.log('\n🧪 Testing normalizeCompanyUrl()');
         'rejects empty input');
     assert(normalizeCompanyUrl({ url: 'microsoft' }).companyId === 'microsoft',
         'accepts the requestListSources object form');
-    assert(buildAboutUrl('https://www.linkedin.com/company/acme-corp/')
-        === 'https://www.linkedin.com/company/acme-corp/about/',
-        'builds the about URL without doubling the slash');
+    // Verified against live LinkedIn: /company/<slug>/about/ redirects guests
+    // to /uas/login with HTTP 200, while /company/<slug> serves the real page -
+    // which carries the whole About panel anyway. Appending the suffix cost
+    // every field in the row and bought nothing.
+    assert(buildCompanyPageUrl('https://www.linkedin.com/company/acme-corp/')
+        === 'https://www.linkedin.com/company/acme-corp',
+        'requests the base company page, never the walled /about/ suffix');
+    assert(!buildCompanyPageUrl('https://www.linkedin.com/company/acme-corp').includes('/about'),
+        'never appends /about to a URL without a trailing slash either');
 }
 
 // ─── parseCount() ────────────────────────────────────────────────────
@@ -204,6 +235,28 @@ console.log('\n🧪 Testing isChallengePage()');
     assert(isChallengePage('<div class="authwall">') === true, 'detects the auth wall');
     assert(isChallengePage(SAMPLE_ABOUT_HTML) === false, 'passes a real company page through');
     assert(isChallengePage(null) === false, 'tolerates a missing body');
+
+    // The gated response that shipped a row named "Sign in" with every other
+    // field null. It carries none of the older markers and arrives as HTTP 200.
+    assert(isChallengePage('<title>LinkedIn Login, Sign in | LinkedIn</title>') === true,
+        'detects the sign-in wall by its page title');
+    assert(isChallengePage('<a href="/x?session_redirect=%2Fcompany%2Fx">') === true,
+        'detects the sign-in wall by its session_redirect parameter');
+}
+
+// ─── isWalledUrl() ───────────────────────────────────────────────────
+console.log('\n🧪 Testing isWalledUrl()');
+{
+    // The sturdier of the two checks: the wall is a 200 at the end of a
+    // redirect chain, so only the landing URL reliably says what happened.
+    assert(isWalledUrl('https://www.linkedin.com/uas/login?session_redirect=%2Fcompany%2Fmicrosoft%2Fabout%2F') === true,
+        'detects the /uas/login redirect target');
+    assert(isWalledUrl('https://www.linkedin.com/authwall?trk=x') === true, 'detects the auth wall');
+    assert(isWalledUrl('https://www.linkedin.com/checkpoint/challenge/x') === true, 'detects a checkpoint');
+    assert(isWalledUrl('https://www.linkedin.com/company/microsoft') === false,
+        'passes the real company page URL through');
+    assert(isWalledUrl(null) === false && isWalledUrl(undefined) === false,
+        'tolerates a missing URL');
 }
 
 // ─── makeCsrfPair() ──────────────────────────────────────────────────
@@ -235,6 +288,11 @@ console.log('\n🧪 Testing JSON-LD and about-panel extraction');
     // The older layout has no data-test-id attributes at all.
     const legacy = parseAboutDefinitions(load('<dl><dt>Company size</dt><dd>51-200 employees</dd></dl>'));
     assert(legacy.companySize === '51-200 employees', 'falls back to dt label text when data-test-ids are absent');
+
+    // LinkedIn's key is about-us__size, not __companySize. The dt fallback was
+    // silently carrying this, which is why the wrong key went unnoticed.
+    const aliased = parseAboutDefinitions(load('<div data-test-id="about-us__size"><dd>11-50 employees</dd></div>'));
+    assert(aliased.companySize === '11-50 employees', 'aliases LinkedIn\'s about-us__size key to companySize');
 }
 
 // ─── parseCompanyAbout() ─────────────────────────────────────────────
@@ -267,13 +325,28 @@ console.log('\n🧪 Testing parseCompanyAbout()');
         'unwraps the website out of LinkedIn\'s outbound redirector');
 
     assert(record.followerCount === 182405, 'extracts the follower count');
-    assert(record.jobOpeningsCount === 57, 'extracts the open jobs count');
+    // The loose selector matched LinkedIn's "Browse jobs" rail and reported
+    // Microsoft as having 710,029 openings - every job on LinkedIn matching
+    // the keyword, not this page's postings.
+    assert(record.jobOpeningsCount === 57, 'reads the open jobs count from the company\'s own jobs link');
+    assert(record.jobOpeningsCount !== 710029, 'does not read the global "Browse jobs" rail');
     assert(record.pageType === 'company', 'resolves page type from the canonical link');
 
-    assert(record.locations.length === 3, 'extracts every declared office, not just the HQ');
+    // One office per entry. Reading each <p> separately turned one office into
+    // three rows - street, city, and the whole card - which is how 45 real
+    // Microsoft offices became 151 "locations".
+    assert(record.locations.length === 3, 'returns one entry per office, not one per address line');
+    assert(record.locations[0] === '1 Anvil Way, Fairfield, NJ 07004, US',
+        'joins the address lines and strips the "Primary" tag and "Get directions" link');
     assert(record.affiliatedCompanies.length === 2, 'extracts affiliated pages');
     assert(record.affiliatedCompanies[0].url === 'https://www.linkedin.com/company/acme-europe',
         'canonicalises affiliated company URLs');
+    // The card stacks name, industry and location inside one <a>, so .text()
+    // returned "Acme Europe Industrial Machinery Manufacturing Dublin, IE".
+    assert(record.affiliatedCompanies[0].name === 'Acme Europe',
+        'reads the card title alone, without the industry and location glued on');
+    assert(record.similarCompanies[0].name === 'Globex',
+        'reads a clean name for similar companies too');
     assert(record.similarCompanies.length === 1, 'extracts similar pages');
     assert(!record.similarCompanies.some((c) => /acme-europe/.test(c.url)),
         'does not leak affiliated pages into similar pages');

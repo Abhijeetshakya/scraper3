@@ -93,8 +93,14 @@ export function parseJsonLd($) {
 export function parseAboutDefinitions($) {
     const definitions = {};
 
+    // LinkedIn's own key for the size row is "size", not "companySize". The
+    // <dt>-label fallback below happened to cover for that, which is exactly
+    // why it went unnoticed - aliasing it makes the primary path work too.
+    const keyAliases = { size: 'companySize', founded: 'foundedOn', type: 'organizationType' };
+
     $('[data-test-id^="about-us__"]').each((_index, element) => {
-        const key = ($(element).attr('data-test-id') ?? '').replace('about-us__', '');
+        const raw = ($(element).attr('data-test-id') ?? '').replace('about-us__', '');
+        const key = keyAliases[raw] ?? raw;
         const value = cleanText($(element).find('dd').text()) || cleanText($(element).text());
         if (key && value) definitions[key] = value;
     });
@@ -152,28 +158,49 @@ function formatPostalAddress(address) {
  * @returns {string[]}
  */
 export function parseLocations($) {
-    const locations = new Set();
+    const locations = [];
+    const push = (value) => {
+        const cleaned = cleanText(value)
+            // Each card carries a "Primary" tag and a "Get directions" map
+            // link. Both are chrome, and both end up inside .text().
+            .replace(/^Primary\s*/i, '')
+            .replace(/\s*Get directions\s*$/i, '')
+            .trim();
+        if (cleaned && cleaned.length > 3 && !locations.includes(cleaned)) locations.push(cleaned);
+    };
 
-    $('[data-test-id="about-us__locations"] li, .locations__list li, .org-locations__list li, .location-item')
+    // The real guest markup: one <li> per office, with the address split
+    // across <p> lines inside a div#address-N. Reading the <li> text whole
+    // would glue the tag and the map link onto the address; reading each <p>
+    // separately returned the street and the city as two more "locations",
+    // which is how one office became three entries.
+    $('ul[data-impression-id="org-locations_show-more-less"] > li, [data-test-id="about-us__locations"] li')
         .each((_index, element) => {
-            const value = cleanText($(element).text());
-            if (value) locations.add(value);
+            const $address = $(element).find('[id^="address-"]').first();
+            const $scope = $address.length > 0 ? $address : $(element);
+            const lines = $scope.find('p').map((_i, p) => cleanText($(p).text())).get().filter(Boolean);
+            push(lines.length > 0 ? lines.join(', ') : $scope.text());
         });
 
-    // The older guest layout renders locations as flat address paragraphs
-    // inside a "Locations" section rather than a list.
-    if (locations.size === 0) {
+    if (locations.length === 0) {
+        $('.locations__list li, .org-locations__list li, .location-item')
+            .each((_index, element) => push($(element).text()));
+    }
+
+    // Last resort for layouts with no list markup at all. Restricted to direct
+    // children so a nested <p> inside an <li> is not counted a second time.
+    if (locations.length === 0) {
         $('section').each((_index, section) => {
             const heading = cleanText($(section).find('h2, h3').first().text()).toLowerCase();
             if (!heading.includes('location')) return;
-            $(section).find('p, address, li').each((_i, element) => {
-                const value = cleanText($(element).text());
-                if (value && value.length > 3) locations.add(value);
+            $(section).find('p, address').each((_i, element) => {
+                if ($(element).parents('li').length > 0) return;
+                push($(element).text());
             });
         });
     }
 
-    return [...locations];
+    return locations;
 }
 
 /**
@@ -194,11 +221,18 @@ function parseLinkedCompanySection($, headingPattern, containerSelectors) {
 
     const harvest = (scope) => {
         $(scope).find('a[href*="/company/"], a[href*="/showcase/"], a[href*="/school/"]').each((_index, element) => {
-            const url = absoluteUrl($(element).attr('href'));
+            const $link = $(element);
+            const url = absoluteUrl($link.attr('href'));
             if (!url || seen.has(url)) return;
-            const name = nullIfEmpty($(element).text())
-                ?? nullIfEmpty($(element).find('img').attr('alt'))
-                ?? nullIfEmpty($(element).closest('li, .base-card').find('h3, .base-main-card__title').first().text());
+
+            // The card renders name, industry and location as three stacked
+            // elements inside the <a>, so .text() on the link returns
+            // "GitHub Software Development San Francisco, CA" - a name field
+            // with two other fields glued to it. Read the title element.
+            const $card = $link.closest('li, .base-card').length > 0 ? $link.closest('li, .base-card') : $link;
+            const name = nullIfEmpty($card.find('.base-aside-card__title, .base-main-card__title, h3').first().text())
+                ?? nullIfEmpty($link.find('img').attr('alt'))
+                ?? nullIfEmpty($link.text());
             seen.set(url, { name, url });
         });
     };
@@ -227,7 +261,8 @@ export function parseAffiliatedCompanies($) {
     return parseLinkedCompanySection(
         $,
         /affiliated|showcase|related pages/i,
-        ['section.affiliated-companies', '[data-test-id="affiliated-companies"]', '.affiliated-pages'],
+        ['ul[data-impression-id="affiliated-pages_show-more-less"]',
+            'section.affiliated-companies', '[data-test-id="affiliated-companies"]', '.affiliated-pages'],
     );
 }
 
@@ -241,7 +276,8 @@ export function parseSimilarCompanies($) {
     return parseLinkedCompanySection(
         $,
         /similar pages|people also viewed|similar companies/i,
-        ['section.similar-pages', '[data-test-id="similar-pages"]', '.similar-companies'],
+        ['ul[data-impression-id="similar-pages_show-more-less"]',
+            'section.similar-pages', '[data-test-id="similar-pages"]', '.similar-companies'],
     );
 }
 
@@ -401,9 +437,14 @@ export function parseCompanyAbout($, html, ref) {
             .text(),
     );
 
+    // Restricted to this company's own jobs link. The looser selector matched
+    // the "Browse jobs" rail at the bottom of the page and reported Microsoft
+    // as having 710,029 openings - that is every job on LinkedIn matching the
+    // keyword "microsoft", not this page's postings. A confidently wrong
+    // number is worse than null, so an unmatched selector yields null.
     const jobOpeningsCount = parseCount(
-        $('a[href*="/jobs"]')
-            .filter((_index, element) => /\d/.test($(element).text()) && /job/i.test($(element).text()))
+        $(`a[href*="/${ref.pageType}/${ref.companyId}/jobs"], a[data-tracking-control-name="org-jobs_see-all"]`)
+            .filter((_index, element) => /\d/.test($(element).text()))
             .first()
             .text(),
     );

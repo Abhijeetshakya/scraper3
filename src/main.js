@@ -3,7 +3,7 @@ import { CheerioCrawler, log } from 'crawlee';
 import { parseCompanyAbout, parseRecentUpdates, parseFeaturedEmployees } from './parsers.js';
 import { VoyagerClient, VoyagerBlockedError, VoyagerBudgetError } from './voyager.js';
 import {
-    normalizeCompanyUrl, buildAboutUrl, extractOrgId, isChallengePage,
+    normalizeCompanyUrl, buildCompanyPageUrl, extractOrgId, isChallengePage, isWalledUrl,
     shouldStopScan, finalizeBreakdown, checkWebsiteStatus, applyToggles,
     cacheKey, isCacheFresh,
 } from './utils.js';
@@ -283,12 +283,16 @@ const crawler = new CheerioCrawler({
     async requestHandler({ request, $, body, session }) {
         const { ref } = request.userData;
 
-        // LinkedIn serves auth walls and checkpoints with HTTP 200, so the
-        // status code alone would let a challenge page through and it would
-        // parse into a company record full of nulls.
-        if (typeof body === 'string' && isChallengePage(body)) {
+        // LinkedIn serves auth walls and checkpoints with HTTP 200 at the end
+        // of a redirect chain, so neither the status code nor the requested URL
+        // says anything. Checked before parsing, because a sign-in page parses
+        // perfectly happily into a company record named "Sign in" with every
+        // other field null - a row that claims success and carries nothing.
+        const landedOn = request.loadedUrl ?? request.url;
+        if (isWalledUrl(landedOn) || (typeof body === 'string' && isChallengePage(body))) {
             session?.retire();
-            throw new Error(`LinkedIn challenge/auth-wall page served for ${request.url}`);
+            throw new Error(`LinkedIn served a sign-in wall for ${request.url}`
+                + (landedOn !== request.url ? ` (redirected to ${landedOn})` : ''));
         }
 
         const html = typeof body === 'string' ? body : body.toString('utf8');
@@ -324,7 +328,7 @@ for (const ref of targets) {
         continue;
     }
     toCrawl.push({
-        url: buildAboutUrl(ref.companyUrl),
+        url: buildCompanyPageUrl(ref.companyUrl),
         userData: { label: LABELS.COMPANY, ref },
         uniqueKey: `${ref.pageType}-${ref.companyId}`,
     });
