@@ -24,7 +24,7 @@ LinkedIn publishes a company's five largest employee locations and hides the res
 
 ## 🔍 What does this Actor do?
 
-For every LinkedIn company, showcase, or school page you give it, this Actor returns **one row** containing:
+For every LinkedIn company, showcase, or school page you give it, this Actor returns **one row per declared office** (or one row per company, if you prefer — see [Output mode](#-output-mode)), containing:
 
 - 🏢 **The full profile** — name, tagline, about text, industry, company type, size band, founded year, specialties, ticker, logo and cover image.
 - 📍 **Location and contact** — headquarters, full structured address, *every* declared office location, phone, website (with an optional DNS check that the domain still resolves).
@@ -44,7 +44,7 @@ The country breakdown is the reason this Actor exists. Everything else is availa
 - 🛡️ **Built to protect the account you give it.** Authenticated calls are strictly serialised, jittered, pinned to one sticky proxy session, and bounded by a request budget you set. One block ends the authenticated pass instead of grinding through the rest of your list confirming it.
 - 🧠 **It tells you when a sweep was cut short.** `countryScan.stopReason` and `countryScan.coverage` distinguish a complete sweep from a truncated one, so a partial breakdown is never mistaken for a full one.
 - 💾 **Caching that actually saves money.** Firmographics and country distribution change slowly. A configurable TTL (default 7 days) reuses a stored row instead of re-spending authenticated request budget on an unchanged company.
-- ✅ **Tested.** 156 automated tests cover the parsers, the scan logic, and the schema contract.
+- ✅ **Tested.** 160 automated tests cover the parsers, the scan logic, and the schema contract.
 
 ---
 
@@ -73,11 +73,11 @@ For each company, LinkedIn's internal numeric organization ID is read out of the
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `companyUrls` | array | ✅ | LinkedIn company / showcase / school URLs, or bare slugs. `microsoft`, `linkedin.com/company/microsoft`, and `https://uk.linkedin.com/company/Microsoft/about/` all resolve to the same row. |
-| `outputMode` | select | — | `company` (default) = one row per company. `location` = one row per declared office. |
+| `outputMode` | select | — | `location` (**default**) = one row per declared office. `company` = one row per company. |
 
 ### 🏫 Output mode
 
-By default you get **one row per company**. Set `outputMode` to `location` and you get **one row per campus** instead — Microsoft returns 45 rows, one for each declared office, with the company's identity repeated on every row and the address broken into components:
+**By default you get one row per campus** — Microsoft returns 45 rows, one for each declared office, with the company's identity repeated on every row and the address broken into components. Set `outputMode` to `company` if you want a single profile row per input URL instead:
 
 | Field | Example |
 |---|---|
@@ -274,8 +274,8 @@ It can. Any automation against LinkedIn carries that risk, which is why the auth
 **Why does the breakdown not add up to the total?**
 Members who list no location are counted in the total and in no country. This is inherent to LinkedIn's data, not a bug — see [How to read the workforce numbers](#-how-to-read-the-workforce-numbers).
 
-**How do I get a row per office instead of per company?**
-Set `outputMode` to `location`. Microsoft goes from 1 row to 45, one per campus, each with parsed address fields and its country's headcount. Add `includeLocationEmployeeCounts` for a metro-level count per office.
+**How do I get one row per company instead of per office?**
+Set `outputMode` to `company`. The default is `location`, which returns one row per campus — Microsoft yields 45 — each with parsed address fields and its country's headcount. Add `includeLocationEmployeeCounts` for a metro-level count per office.
 
 **Can I pass showcase or school pages?**
 Yes. Both are accepted and reported via `pageType`. Showcase pages are sub-brands and typically carry far fewer employees than their parent.

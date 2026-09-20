@@ -16,9 +16,15 @@ const input = await Actor.getInput() ?? {};
 const {
     companyUrls = [],
     sessionCookie = null,
-    // 'company' -> one row per company. 'location' -> one row per campus, with
-    // the company's identity repeated on each and the address broken out.
-    outputMode = 'company',
+    // Default 'location': one row per campus, with the company's identity
+    // repeated on each and the address broken out. 'company' collapses back to
+    // a single profile row per input URL.
+    //
+    // This default must stay in step with input_schema.json - the schema drives
+    // the console form, this line drives API callers who omit the field, and
+    // the two disagreeing means the same input behaves differently depending on
+    // how the run was started. A test asserts they match.
+    outputMode = 'location',
     includeLocationEmployeeCounts = false,
     includeCountryBreakdown = true,
     includeLocations = true,

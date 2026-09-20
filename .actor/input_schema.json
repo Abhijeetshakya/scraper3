@@ -16,16 +16,16 @@
         "outputMode": {
             "title": "Output Mode",
             "type": "string",
-            "description": "'One row per company' returns a single profile row per input URL. 'One row per location' returns one row per declared office, with the company's identity repeated on each and the address broken into city / region / postal code / country \u2014 Microsoft yields 45 rows. Use location mode when you want to map, filter or group a company's footprint.",
+            "description": "Default: one row per declared office, with the company's identity repeated on each row and the address broken into city / region / postal code / country \u2014 Microsoft yields 45 rows. Switch to 'One row per company' for a single profile row per input URL instead.",
             "editor": "select",
-            "default": "company",
+            "default": "location",
             "enum": [
-                "company",
-                "location"
+                "location",
+                "company"
             ],
             "enumTitles": [
-                "One row per company",
-                "One row per location (campus)"
+                "One row per location (campus)",
+                "One row per company"
             ]
         },
         "sessionCookie": {

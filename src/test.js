@@ -645,6 +645,22 @@ console.log('\n🧪 Testing dataset schema coverage');
 
     const inputSchema = JSON.parse(readFileSync(new URL('../.actor/input_schema.json', import.meta.url)));
     assert(inputSchema.schemaVersion === 1, 'input_schema.json uses the schemaVersion marker');
+
+    // The schema default drives the console form; the destructuring default in
+    // main.js drives API callers who omit the field. If they drift, the same
+    // input behaves differently depending on how the run was started - which is
+    // the sort of bug that only shows up in production. main.js cannot be
+    // imported here (it calls Actor.init at module scope), so this reads the
+    // source rather than the binding.
+    const mainSource = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
+    const codeDefault = mainSource.match(/outputMode\s*=\s*'([a-z]+)'/)?.[1];
+    assert(codeDefault === inputSchema.properties.outputMode.default,
+        `outputMode default matches between main.js (${codeDefault}) and input_schema.json (${inputSchema.properties.outputMode.default})`);
+    assert(inputSchema.properties.outputMode.default === 'location',
+        'the shipped default is one row per location');
+    assert(inputSchema.properties.outputMode.enum.length
+        === inputSchema.properties.outputMode.enumTitles.length,
+        'every outputMode option has a display title');
     const outputSchema = JSON.parse(readFileSync(new URL('../.actor/output_schema.json', import.meta.url)));
     assert(outputSchema.actorOutputSchemaVersion === 1,
         'output_schema.json uses actorOutputSchemaVersion and links storages, not fields');
