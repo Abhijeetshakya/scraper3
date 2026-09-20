@@ -6,17 +6,32 @@
         "companyUrls": {
             "title": "Company URLs",
             "type": "array",
-            "description": "LinkedIn company, showcase or school URLs — or bare slugs. All of these work: 'microsoft', 'linkedin.com/company/microsoft', 'https://www.linkedin.com/company/microsoft/about/'. Duplicates and locale subdomains are collapsed to one row.",
+            "description": "LinkedIn company, showcase or school URLs \u2014 or bare slugs. All of these work: 'microsoft', 'linkedin.com/company/microsoft', 'https://www.linkedin.com/company/microsoft/about/'. Duplicates and locale subdomains are collapsed to one row.",
             "editor": "stringList",
             "prefill": [
                 "https://www.linkedin.com/company/microsoft"
             ],
             "sectionCaption": "Companies"
         },
+        "outputMode": {
+            "title": "Output Mode",
+            "type": "string",
+            "description": "'One row per company' returns a single profile row per input URL. 'One row per location' returns one row per declared office, with the company's identity repeated on each and the address broken into city / region / postal code / country \u2014 Microsoft yields 45 rows. Use location mode when you want to map, filter or group a company's footprint.",
+            "editor": "select",
+            "default": "company",
+            "enum": [
+                "company",
+                "location"
+            ],
+            "enumTitles": [
+                "One row per company",
+                "One row per location (campus)"
+            ]
+        },
         "sessionCookie": {
             "title": "LinkedIn Session Cookie (li_at)",
             "type": "string",
-            "description": "⚠️ Required only for the country breakdown. LinkedIn shows a company's top-5 employee locations publicly and gates everything beyond that behind a login, so a full per-country breakdown needs an authenticated session. Paste the value of the 'li_at' cookie from a logged-in LinkedIn session. Every other field in the output works without it. Use a secondary account: automated requests can get an account restricted.",
+            "description": "\u26a0\ufe0f Required only for the country breakdown. LinkedIn shows a company's top-5 employee locations publicly and gates everything beyond that behind a login, so a full per-country breakdown needs an authenticated session. Paste the value of the 'li_at' cookie from a logged-in LinkedIn session. Every other field in the output works without it. Use a secondary account: automated requests can get an account restricted.",
             "editor": "textfield",
             "isSecret": true,
             "sectionCaption": "Authentication"
@@ -24,9 +39,15 @@
         "includeCountryBreakdown": {
             "title": "Employee Count by Country",
             "type": "boolean",
-            "description": "The headline feature: employee headcount per country, beyond LinkedIn's default top-5 display. Needs the session cookie above. This costs one authenticated request per country, so it is by far the slowest part of a run — see 'Country scan' below to bound it.",
+            "description": "The headline feature: employee headcount per country, beyond LinkedIn's default top-5 display. Needs the session cookie above. This costs one authenticated request per country, so it is by far the slowest part of a run \u2014 see 'Country scan' below to bound it.",
             "default": true,
             "sectionCaption": "Output sections"
+        },
+        "includeLocationEmployeeCounts": {
+            "title": "Count Employees per Location",
+            "type": "boolean",
+            "description": "\u26a0\ufe0f SLOW. Adds a metro-level headcount to every campus row, on top of the country sweep. Needs the session cookie and Output Mode = one row per location. Costs roughly one extra authenticated request per office, so Microsoft's 45 campuses add ~45 requests (~90 seconds) to that company alone. Without it, each campus still carries its country's headcount at no extra cost.",
+            "default": false
         },
         "includeLocations": {
             "title": "Declared Office Locations",
@@ -61,7 +82,7 @@
         "includeFeaturedEmployees": {
             "title": "Featured Employees",
             "type": "boolean",
-            "description": "The small sample of employee profiles LinkedIn surfaces publicly. This is a sample LinkedIn chose to show, not a roster — the country breakdown is the workforce signal.",
+            "description": "The small sample of employee profiles LinkedIn surfaces publicly. This is a sample LinkedIn chose to show, not a roster \u2014 the country breakdown is the workforce signal.",
             "default": false
         },
         "countries": {
@@ -99,7 +120,7 @@
         "requestDelayMs": {
             "title": "Delay Between Authenticated Requests (ms)",
             "type": "integer",
-            "description": "Spacing between authenticated LinkedIn requests, jittered ±20%. 1500–2000ms is the safe band; lowering it raises the chance of a rate-limit or an account restriction. Applies to the authenticated lane only — public pages are governed by concurrency.",
+            "description": "Spacing between authenticated LinkedIn requests, jittered \u00b120%. 1500\u20132000ms is the safe band; lowering it raises the chance of a rate-limit or an account restriction. Applies to the authenticated lane only \u2014 public pages are governed by concurrency.",
             "editor": "number",
             "minimum": 0,
             "default": 1750
@@ -107,7 +128,7 @@
         "verifyWebsite": {
             "title": "Verify Website Domain",
             "type": "boolean",
-            "description": "Check whether the listed website's domain still resolves in DNS, and report it as websiteStatus. A dead domain on a live LinkedIn page is a real signal — acquired, folded, or rebranded. Costs one DNS lookup per company, no HTTP request.",
+            "description": "Check whether the listed website's domain still resolves in DNS, and report it as websiteStatus. A dead domain on a live LinkedIn page is a real signal \u2014 acquired, folded, or rebranded. Costs one DNS lookup per company, no HTTP request.",
             "default": false,
             "sectionCaption": "Run control"
         },

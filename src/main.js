@@ -4,7 +4,7 @@ import { parseCompanyAbout, parseRecentUpdates, parseFeaturedEmployees } from '.
 import { VoyagerClient, VoyagerBlockedError, VoyagerBudgetError } from './voyager.js';
 import {
     normalizeCompanyUrl, buildCompanyPageUrl, extractOrgId, isChallengePage, isWalledUrl,
-    shouldStopScan, finalizeBreakdown, checkWebsiteStatus, applyToggles,
+    shouldStopScan, finalizeBreakdown, checkWebsiteStatus, applyToggles, expandToLocationRows,
     cacheKey, isCacheFresh,
 } from './utils.js';
 import { LABELS, DEFAULT_USER_AGENT, BLOCKED_STATUS_CODES, DEFAULT_COUNTRY_SCAN, DEFAULTS } from './constants.js';
@@ -16,6 +16,10 @@ const input = await Actor.getInput() ?? {};
 const {
     companyUrls = [],
     sessionCookie = null,
+    // 'company' -> one row per company. 'location' -> one row per campus, with
+    // the company's identity repeated on each and the address broken out.
+    outputMode = 'company',
+    includeLocationEmployeeCounts = false,
     includeCountryBreakdown = true,
     includeLocations = true,
     includeSpecialties = true,
@@ -87,6 +91,7 @@ if (includeCountryBreakdown && !sessionCookie) {
 
 log.info('Starting LinkedIn Company Workforce & Profile Intelligence', {
     companies: targets.length,
+    outputMode,
     countryBreakdown: wantBreakdown,
     requestDelaySeconds: delaySeconds,
     cacheTtlDays,
@@ -147,7 +152,9 @@ let authAbandoned = false;
  */
 async function pushRow(row) {
     const toggled = applyToggles(row, {
-        locations: includeLocations,
+        // In location mode the campus list *is* the output, so the toggle
+        // cannot be allowed to delete it.
+        locations: includeLocations || outputMode === 'location',
         specialties: includeSpecialties,
         affiliatedCompanies: includeAffiliatedCompanies,
         similarCompanies: includeSimilarCompanies,
@@ -157,13 +164,26 @@ async function pushRow(row) {
         totalEmployeesOnLinkedIn: includeCountryBreakdown,
     });
 
-    await Actor.pushData(toggled);
-    pushedRows++;
-    if (!row.success) failedRows++;
-
+    // Cached at company granularity, before any fan-out: the cache should not
+    // have to be invalidated just because the caller switched output modes.
     if (row.success && cacheTtlDays > 0) {
         await Actor.setValue(cacheKey(row.companyId, row.pageType), toggled);
     }
+
+    await emitRow(toggled);
+    if (!row.success) failedRows++;
+}
+
+/**
+ * Write a finished company row to the dataset, expanding it per campus first
+ * when the run is in location mode.
+ *
+ * @param {object} companyRow
+ */
+async function emitRow(companyRow) {
+    const records = outputMode === 'location' ? expandToLocationRows(companyRow) : [companyRow];
+    await Actor.pushData(records);
+    pushedRows += records.length;
 }
 
 /**
@@ -184,6 +204,32 @@ function failedRow(ref, error) {
         dataFetchedAt: new Date().toISOString(),
         sourceType: 'public',
     };
+}
+
+/**
+ * Count members in each campus's own metro area.
+ *
+ * Opt-in and charged per campus: Microsoft declares 45 offices, so this is 45
+ * more authenticated requests on top of the country sweep. The metro LinkedIn
+ * matched is reported as `locationGeoName` - "Redmond" resolves to "Redmond,
+ * Washington, United States", and a consumer should be able to see that rather
+ * than trust a bare number.
+ *
+ * @param {string} orgId
+ * @param {object[]} campuses - Mutated in place
+ */
+async function addLocationEmployeeCounts(orgId, campuses) {
+    for (const campus of campuses) {
+        if (!campus.city) continue;
+        // Qualified with the country so "Cambridge" and "Reading" resolve to
+        // the intended one of the several cities that share those names.
+        const query = campus.country ? `${campus.city}, ${campus.country}` : campus.city;
+        const geo = await voyager.resolveGeoId(query, { exact: false })
+            ?? await voyager.resolveGeoId(campus.city, { exact: false });
+        if (!geo) continue;
+        campus.locationGeoName = geo.matchedName;
+        campus.employeesAtLocation = await voyager.countEmployees({ orgId, geoId: geo.geoId });
+    }
 }
 
 /**
@@ -209,10 +255,10 @@ async function buildCountryBreakdown(orgId) {
     let stopReason = 'listExhausted';
 
     for (const country of scanList) {
-        const geoId = await voyager.resolveGeoId(country);
-        if (!geoId) continue; // Unresolvable name; counted as neither hit nor miss.
+        const geo = await voyager.resolveGeoId(country);
+        if (!geo) continue; // Unresolvable name; counted as neither hit nor miss.
 
-        const count = await voyager.countEmployees({ orgId, geoId });
+        const count = await voyager.countEmployees({ orgId, geoId: geo.geoId });
         scanned++;
 
         if (count && count > 0) {
@@ -323,8 +369,7 @@ for (const ref of targets) {
     const cached = cacheTtlDays > 0 ? await Actor.getValue(cacheKey(ref.companyId, ref.pageType)) : null;
     if (isCacheFresh(cached, cacheTtlDays)) {
         log.info(`Cache hit (<${cacheTtlDays}d) for ${ref.companyId}; skipping fetch.`);
-        await Actor.pushData({ ...cached, fromCache: true });
-        pushedRows++;
+        await emitRow({ ...cached, fromCache: true });
         continue;
     }
     toCrawl.push({
@@ -391,6 +436,12 @@ for (const { ref, publicData } of pending.values()) {
 
         log.info(`Sweeping countries for ${base.name ?? ref.companyId} (org ${orgId})...`);
         const breakdown = await buildCountryBreakdown(orgId);
+
+        if (includeLocationEmployeeCounts && outputMode === 'location' && Array.isArray(base.locations)) {
+            log.info(`  Counting employees at ${base.locations.length} campus metro(s)...`);
+            await addLocationEmployeeCounts(orgId, base.locations);
+        }
+
         await pushRow({ ...base, ...breakdown, sourceType: 'authenticated' });
         log.info(`  ${breakdown.countryBreakdown.length} country/countries found across `
             + `${breakdown.countryScan.countriesQueried} queried (stop: ${breakdown.countryScan.stopReason}).`);

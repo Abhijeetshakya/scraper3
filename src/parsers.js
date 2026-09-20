@@ -1,5 +1,5 @@
 import { LINKEDIN_BASE, PAGE_TYPE_PREFIXES } from './constants.js';
-import { cleanText, nullIfEmpty, parseCount, normalizeCompanyUrl } from './utils.js';
+import { cleanText, nullIfEmpty, parseCount, normalizeCompanyUrl, parseAddressLines } from './utils.js';
 
 /**
  * Absolutise a LinkedIn href and strip its tracking query string.
@@ -158,49 +158,56 @@ function formatPostalAddress(address) {
  * @returns {string[]}
  */
 export function parseLocations($) {
-    const locations = [];
-    const push = (value) => {
-        const cleaned = cleanText(value)
-            // Each card carries a "Primary" tag and a "Get directions" map
-            // link. Both are chrome, and both end up inside .text().
-            .replace(/^Primary\s*/i, '')
-            .replace(/\s*Get directions\s*$/i, '')
-            .trim();
-        if (cleaned && cleaned.length > 3 && !locations.includes(cleaned)) locations.push(cleaned);
+    const campuses = [];
+    const seen = new Set();
+
+    const add = ({ lines, isPrimary = false, mapUrl = null, fallbackText = null }) => {
+        const cleaned = (lines ?? []).map((line) => cleanText(line)).filter(Boolean);
+        const parsed = parseAddressLines(cleaned.length > 0 ? cleaned : [cleanText(fallbackText)]);
+        if (!parsed.formattedAddress || parsed.formattedAddress.length < 4) return;
+        if (seen.has(parsed.formattedAddress)) return;
+        seen.add(parsed.formattedAddress);
+        campuses.push({ ...parsed, isPrimary, mapUrl, addressLines: cleaned });
     };
 
-    // The real guest markup: one <li> per office, with the address split
-    // across <p> lines inside a div#address-N. Reading the <li> text whole
-    // would glue the tag and the map link onto the address; reading each <p>
-    // separately returned the street and the city as two more "locations",
-    // which is how one office became three entries.
+    // The real guest markup: one <li> per office, the address split across <p>
+    // lines inside a div#address-N, a "Primary" tag on the HQ, and a map link.
+    // Reading the <li> text whole glues the tag and the link onto the address;
+    // reading each <p> as its own location turned one office into three, which
+    // is how 45 Microsoft campuses once came back as 151 "locations".
     $('ul[data-impression-id="org-locations_show-more-less"] > li, [data-test-id="about-us__locations"] li')
         .each((_index, element) => {
-            const $address = $(element).find('[id^="address-"]').first();
-            const $scope = $address.length > 0 ? $address : $(element);
-            const lines = $scope.find('p').map((_i, p) => cleanText($(p).text())).get().filter(Boolean);
-            push(lines.length > 0 ? lines.join(', ') : $scope.text());
+            const $el = $(element);
+            const $address = $el.find('[id^="address-"]').first();
+            const $scope = $address.length > 0 ? $address : $el;
+            add({
+                lines: $scope.find('p').map((_i, p) => $(p).text()).get(),
+                isPrimary: /primary/i.test($el.find('span.tag-sm, .tag-enabled').first().text()),
+                mapUrl: $el.find('a[data-tracking-control-name="org-locations_url"]').attr('href') ?? null,
+                fallbackText: $scope.text(),
+            });
         });
 
-    if (locations.length === 0) {
-        $('.locations__list li, .org-locations__list li, .location-item')
-            .each((_index, element) => push($(element).text()));
+    if (campuses.length === 0) {
+        $('.locations__list li, .org-locations__list li, .location-item').each((_index, element) => {
+            add({ lines: [], fallbackText: $(element).text() });
+        });
     }
 
-    // Last resort for layouts with no list markup at all. Restricted to direct
-    // children so a nested <p> inside an <li> is not counted a second time.
-    if (locations.length === 0) {
+    // Last resort for layouts with no list markup. Restricted to elements not
+    // inside an <li>, so a nested <p> is not counted a second time.
+    if (campuses.length === 0) {
         $('section').each((_index, section) => {
             const heading = cleanText($(section).find('h2, h3').first().text()).toLowerCase();
             if (!heading.includes('location')) return;
             $(section).find('p, address').each((_i, element) => {
                 if ($(element).parents('li').length > 0) return;
-                push($(element).text());
+                add({ lines: [], fallbackText: $(element).text() });
             });
         });
     }
 
-    return locations;
+    return campuses;
 }
 
 /**

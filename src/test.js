@@ -15,7 +15,7 @@ import { findDeep, extractTotal, VoyagerClient, VoyagerBlockedError, VoyagerBudg
 import {
     cleanText, nullIfEmpty, parseCount, normalizeCompanyUrl, buildCompanyPageUrl, extractOrgId,
     isChallengePage, isWalledUrl, makeCsrfPair, shouldStopScan, finalizeBreakdown, applyToggles,
-    cacheKey, isCacheFresh,
+    cacheKey, isCacheFresh, parseAddressLines, countryNameFromCode, expandToLocationRows,
 } from './utils.js';
 import { DEFAULT_COUNTRY_SCAN } from './constants.js';
 
@@ -345,8 +345,13 @@ console.log('\n🧪 Testing parseCompanyAbout()');
     // three rows - street, city, and the whole card - which is how 45 real
     // Microsoft offices became 151 "locations".
     assert(record.locations.length === 3, 'returns one entry per office, not one per address line');
-    assert(record.locations[0] === '1 Anvil Way, Fairfield, NJ 07004, US',
+    assert(record.locations[0].formattedAddress === '1 Anvil Way, Fairfield, NJ 07004, US',
         'joins the address lines and strips the "Primary" tag and "Get directions" link');
+    assert(record.locations[0].isPrimary === true && record.locations[1].isPrimary === false,
+        'flags the HQ from LinkedIn\'s "Primary" tag');
+    assert(record.locations[0].city === 'Fairfield' && record.locations[0].countryCode === 'US',
+        'breaks each campus into address components');
+    assert(record.locations[0].mapUrl?.includes('bing.com/maps'), 'keeps the directions link');
     assert(record.affiliatedCompanies.length === 2, 'extracts affiliated pages');
     assert(record.affiliatedCompanies[0].url === 'https://www.linkedin.com/company/acme-europe',
         'canonicalises affiliated company URLs');
@@ -378,8 +383,88 @@ console.log('\n🧪 Testing optional section parsers');
     assert(employees[0].profileUrl === 'https://www.linkedin.com/in/wile-e-coyote',
         'strips tracking params from the profile URL');
 
-    assert(parseLocations(load('<section><h2>Locations</h2><p>Berlin, Germany</p></section>'))
-        .includes('Berlin, Germany'), 'falls back to a heading walk when there is no list markup');
+    assert(parseLocations(load('<section><h2>Locations</h2><p>Berlin, Germany</p></section>'))[0]
+        ?.formattedAddress === 'Berlin, Germany', 'falls back to a heading walk when there is no list markup');
+}
+
+// ─── parseAddressLines() ─────────────────────────────────────────────
+// Validated against all 45 live Microsoft campuses, which is where these
+// formats came from - every one of them broke an earlier naive split.
+console.log('\n🧪 Testing parseAddressLines()');
+{
+    const us = parseAddressLines(['1 Microsoft Way', 'Redmond, Washington 98052, US']);
+    assert(us.city === 'Redmond' && us.region === 'Washington' && us.postalCode === '98052',
+        'splits a US address into city, region and ZIP');
+    assert(us.country === 'United States', 'resolves the country name from the ISO code');
+
+    // UK and Canadian postcodes are two tokens; taking only the last one
+    // splits them down the middle.
+    const gb = parseAddressLines(['Thames Valley Park Drive', 'Reading, Berkshire RG6 1WG, GB']);
+    assert(gb.postalCode === 'RG6 1WG' && gb.region === 'Berkshire', 'keeps a two-token UK postcode intact');
+    const ca = parseAddressLines(['1950 Meadowvale Blvd', 'Mississauga, Ontario L5N 8L9, CA']);
+    assert(ca.postalCode === 'L5N 8L9' && ca.city === 'Mississauga', 'keeps a two-token Canadian postcode intact');
+
+    const de = parseAddressLines(['Walter-Gropius-Straße 5', 'München, 80807, DE']);
+    assert(de.city === 'München' && de.region === null && de.postalCode === '80807',
+        'handles a country that lists no region');
+
+    // Denmark writes the postal code before the city.
+    const dk = parseAddressLines(['Kanalvej 7', '2800 Kongens Lyngby, DK']);
+    assert(dk.city === 'Kongens Lyngby' && dk.postalCode === '2800', 'handles a postal-code-first address');
+
+    const co = parseAddressLines(['Calle 92 # 11 – 51', 'Bogota, CO']);
+    assert(co.city === 'Bogota' && co.postalCode === null, 'handles an address with no postal code');
+
+    // Middle lines are building and tower names - part of the street, not junk.
+    const ph = parseAddressLines(['Ayala Avenue cor Edsa', '11F, One Ayala East Tower', 'Makati City, 1223, PH']);
+    assert(ph.street?.includes('One Ayala East Tower'), 'keeps building lines with the street');
+    assert(ph.city === 'Makati City', 'still finds the city behind a building line');
+
+    const th = parseAddressLines(['87/2 ถนนวิทยุ แขวงลุมพินี', 'เขตปทุมวัน กรุงเทพฯ, 10330, TH']);
+    assert(th.countryCode === 'TH' && th.country === 'Thailand', 'handles a non-Latin address');
+
+    assert(parseAddressLines([]).formattedAddress === null, 'tolerates no address lines');
+    assert(countryNameFromCode('ZZ') === null && countryNameFromCode('') === null,
+        'returns null for an unknown code rather than Intl\'s "Unknown Region" placeholder');
+}
+
+// ─── expandToLocationRows() ──────────────────────────────────────────
+console.log('\n🧪 Testing expandToLocationRows()');
+{
+    const companyRow = {
+        companyId: 'acme', name: 'Acme', success: true, error: null,
+        totalEmployeesOnLinkedIn: 1000,
+        countryBreakdown: [
+            { country: 'United States', employeeCount: 600, percentOfTotal: 60 },
+            { country: 'Ireland', employeeCount: 300, percentOfTotal: 30 },
+        ],
+        locations: [
+            { city: 'Fairfield', country: 'United States', countryCode: 'US', isPrimary: true, formattedAddress: 'A' },
+            { city: 'Dublin', country: 'Ireland', countryCode: 'IE', isPrimary: false, formattedAddress: 'B' },
+            { city: 'Bengaluru', country: 'India', countryCode: 'IN', isPrimary: false, formattedAddress: 'C' },
+        ],
+    };
+
+    const rows = expandToLocationRows(companyRow);
+    assert(rows.length === 3, 'emits one row per declared campus');
+    assert(rows.every((r) => r.name === 'Acme' && r.locationCount === 3),
+        'repeats the company identity on every row so each stands alone');
+    assert(rows[0].isPrimaryLocation === true && rows[1].isPrimaryLocation === false,
+        'marks which row is the HQ');
+    // Joined from the sweep that already ran for the company, so it costs
+    // nothing extra per campus.
+    assert(rows[1].employeesInCountry === 300 && rows[1].percentOfWorkforceInCountry === 30,
+        'joins each campus to its country headcount');
+    // An office in a country the sweep never reached must not borrow another
+    // country's number.
+    assert(rows[2].employeesInCountry === null, 'leaves the count null when the sweep did not reach that country');
+    assert(!('countryBreakdown' in rows[0]) && !('locations' in rows[0]),
+        'drops the nested company-level arrays from location rows');
+
+    // A company with no declared offices still has to appear in the output.
+    const none = expandToLocationRows({ companyId: 'x', name: 'X', success: true, locations: [] });
+    assert(none.length === 1 && none[0].city === null, 'still emits one row for a company with no offices');
+    assert(/no office locations/i.test(none[0].error), 'explains why the campus fields are empty');
 }
 
 // ─── findDeep() / extractTotal() ─────────────────────────────────────
@@ -416,16 +501,28 @@ console.log('\n🧪 Testing VoyagerClient bookkeeping');
     assert(!(new VoyagerBudgetError('x') instanceof VoyagerBlockedError),
         'a spent budget is not reported as a LinkedIn block');
 
-    client.primeGeoCache({ 'United States': '103644278', Atlantis: null });
-    assert(client.geoCache.get('atlantis') === null,
+    // In-run memoisation of a failure, so one bad country is not retried once
+    // per company.
+    client.geoCache.set('c:atlantis', null);
+    assert(client.geoCache.get('c:atlantis') === null,
         'a failed lookup stays memoised in-run so it is not retried per country');
     // Exporting it would mark the country as permanently geo-less for every
     // future run after a single flaky typeahead request.
-    assert(!('Atlantis' in client.exportGeoCache()),
+    assert(!('c:atlantis' in client.exportGeoCache()),
         'a failed lookup is never persisted to the cross-run geo cache');
-    // Keys round-trip lowercased, matching how resolveGeoId looks them up.
-    assert(client.exportGeoCache()['united states'] === '103644278',
+
+    client.primeGeoCache({ 'c:united states': { geoId: '103644278', matchedName: 'United States' } });
+    assert(client.geoCache.get('c:united states')?.geoId === '103644278',
+        'a primed entry lands on the key resolveGeoId reads');
+    assert(client.exportGeoCache()['c:united states']?.geoId === '103644278',
         'successful lookups are persisted, keyed as they are looked up');
+
+    // A cache written before city lookups existed has no prefix; priming it
+    // under the raw key would hide every country behind a key nothing reads.
+    const legacy = new VoyagerClient({ sessionCookie: 'fake' });
+    legacy.primeGeoCache({ India: '102713980' });
+    assert(legacy.geoCache.get('c:india')?.geoId === '102713980',
+        'an unprefixed legacy cache entry is migrated to the country-match key');
 }
 
 // ─── shouldStopScan() ────────────────────────────────────────────────
@@ -524,6 +621,11 @@ console.log('\n🧪 Testing dataset schema coverage');
         'companyUrl', 'companyId', 'success', 'error', 'dataFetchedAt', 'sourceType',
         'countryBreakdown', 'totalEmployeesOnLinkedIn', 'countryScan',
         'recentUpdates', 'featuredEmployees', 'websiteStatus', 'fromCache',
+        ...Object.keys(expandToLocationRows({
+            companyId: 'x', success: true,
+            locations: [{ city: 'C', country: 'Ireland', countryCode: 'IE', isPrimary: false }],
+            countryBreakdown: [],
+        })[0]),
     ];
     const undeclared = [...new Set(emitted)].filter((field) => !declared.has(field));
     assert(undeclared.length === 0, `every emitted field is declared in dataset_schema.json${undeclared.length ? ` (missing: ${undeclared.join(', ')})` : ''}`);

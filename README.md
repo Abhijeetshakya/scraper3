@@ -44,7 +44,7 @@ The country breakdown is the reason this Actor exists. Everything else is availa
 - 🛡️ **Built to protect the account you give it.** Authenticated calls are strictly serialised, jittered, pinned to one sticky proxy session, and bounded by a request budget you set. One block ends the authenticated pass instead of grinding through the rest of your list confirming it.
 - 🧠 **It tells you when a sweep was cut short.** `countryScan.stopReason` and `countryScan.coverage` distinguish a complete sweep from a truncated one, so a partial breakdown is never mistaken for a full one.
 - 💾 **Caching that actually saves money.** Firmographics and country distribution change slowly. A configurable TTL (default 7 days) reuses a stored row instead of re-spending authenticated request budget on an unchanged company.
-- ✅ **Tested.** 130 automated tests cover the parsers, the scan logic, and the schema contract.
+- ✅ **Tested.** 156 automated tests cover the parsers, the scan logic, and the schema contract.
 
 ---
 
@@ -73,6 +73,29 @@ For each company, LinkedIn's internal numeric organization ID is read out of the
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `companyUrls` | array | ✅ | LinkedIn company / showcase / school URLs, or bare slugs. `microsoft`, `linkedin.com/company/microsoft`, and `https://uk.linkedin.com/company/Microsoft/about/` all resolve to the same row. |
+| `outputMode` | select | — | `company` (default) = one row per company. `location` = one row per declared office. |
+
+### 🏫 Output mode
+
+By default you get **one row per company**. Set `outputMode` to `location` and you get **one row per campus** instead — Microsoft returns 45 rows, one for each declared office, with the company's identity repeated on every row and the address broken into components:
+
+| Field | Example |
+|---|---|
+| `city` / `region` / `postalCode` | `Redmond` / `Washington` / `98052` |
+| `countryCode` / `country` | `US` / `United States` |
+| `street` | `1 Microsoft Way` (including building and floor lines) |
+| `formattedAddress` | `1 Microsoft Way, Redmond, Washington 98052, US` |
+| `isPrimaryLocation` | `true` for the HQ |
+| `mapUrl` | LinkedIn's "Get directions" link |
+| `locationIndex` / `locationCount` | `0` / `45` |
+| `employeesInCountry` | `118000` — joined from the country sweep, free |
+| `percentOfWorkforceInCountry` | `50.9` |
+| `employeesAtLocation` | metro-level headcount — opt-in, costs one request per campus |
+| `locationGeoName` | `Redmond, Washington, United States` — the metro LinkedIn actually matched |
+
+Address parsing was validated against all 45 live Microsoft campuses, which is where the awkward cases came from: two-token UK (`RG6 1WG`) and Canadian (`L5N 8L9`) postcodes, German addresses with no region, Danish addresses that lead with the postal code, Philippine addresses with a tower name on its own line, and Thai offices written in Thai script.
+
+⚠️ **`employeesInCountry` is country-level, not campus-level.** Every campus in Germany carries Microsoft's German headcount. If a country has several offices, this does not tell you how they split — enable `includeLocationEmployeeCounts` for a metro-level figure, or read it as "this office is in a country where the company has N people".
 
 ### 🔑 Authentication
 
@@ -87,7 +110,8 @@ For each company, LinkedIn's internal numeric organization ID is read out of the
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `includeCountryBreakdown` | boolean | `true` | Employee count per country. Needs the cookie. The slowest part of any run. |
-| `includeLocations` | boolean | `true` | Every declared office, not just the HQ. |
+| `includeLocationEmployeeCounts` | boolean | `false` | Metro-level headcount per campus. Needs the cookie and `outputMode: "location"`. ~1 extra request per office — Microsoft's 45 campuses add ~90 seconds. |
+| `includeLocations` | boolean | `true` | Every declared office, not just the HQ. Always on in location mode. |
 | `includeSpecialties` | boolean | `true` | Self-declared focus tags. |
 | `includeAffiliatedCompanies` | boolean | `true` | Subsidiary / regional / showcase pages. |
 | `includeSimilarCompanies` | boolean | `false` | LinkedIn's "similar pages" suggestions. |
@@ -226,6 +250,7 @@ Turning `includeCountryBreakdown` off makes runs near-instant and removes the co
 
 ## 🎯 Use cases
 
+- 🗺️ **Footprint mapping** — one row per campus, with city, region, country and coordinates-ready addresses, ready to drop into a map or a territory spreadsheet.
 - 🌐 **Market entry** — see whether a competitor already has staff on the ground in a target country, and how many, before committing to it.
 - 🗺️ **Territory and quota planning** — size sales territories against where a prospect's employees actually sit, not where its HQ is registered.
 - 🕵️ **Competitive intelligence** — track headcount shifting between countries across scheduled runs to spot expansion, consolidation, or an offshoring programme.
@@ -248,6 +273,9 @@ It can. Any automation against LinkedIn carries that risk, which is why the auth
 
 **Why does the breakdown not add up to the total?**
 Members who list no location are counted in the total and in no country. This is inherent to LinkedIn's data, not a bug — see [How to read the workforce numbers](#-how-to-read-the-workforce-numbers).
+
+**How do I get a row per office instead of per company?**
+Set `outputMode` to `location`. Microsoft goes from 1 row to 45, one per campus, each with parsed address fields and its country's headcount. Add `includeLocationEmployeeCounts` for a metro-level count per office.
 
 **Can I pass showcase or school pages?**
 Yes. Both are accepted and reported via `pageType`. Showcase pages are sub-brands and typically carry far fewer employees than their parent.

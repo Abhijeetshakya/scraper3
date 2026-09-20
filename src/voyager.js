@@ -275,28 +275,40 @@ export class VoyagerClient {
      * @param {string} country
      * @returns {Promise<string|null>}
      */
-    async resolveGeoId(country) {
-        const key = country.toLowerCase();
+    async resolveGeoId(query, { exact = true } = {}) {
+        const key = `${exact ? 'c' : 'p'}:${query.toLowerCase()}`;
         if (this.geoCache.has(key)) return this.geoCache.get(key);
 
         const payload = await this.request(
-            `typeahead/hitsV2?keywords=${encodeURIComponent(country)}`
+            `typeahead/hitsV2?keywords=${encodeURIComponent(query)}`
             + '&origin=OTHER&q=type&type=GEO&useCase=GEO_ABBREVIATED',
         );
 
-        let geoId = null;
+        let resolved = null;
         const elements = findDeep(payload, ['elements']);
         if (Array.isArray(elements)) {
-            // Exact display-name match only. A prefix match on "Georgia"
-            // happily returns the US state, and a prefix match on "India"
-            // returns "Indiana" - both produce a confident, wrong number.
-            const exact = elements.find((hit) => extractHitText(hit).toLowerCase() === key);
-            geoId = extractGeoId(exact ?? null);
+            const wanted = query.toLowerCase();
+            // Countries are matched exactly. A prefix match on "Georgia"
+            // happily returns the US state and on "India" returns "Indiana",
+            // and neither errors - they return a confident count for the
+            // wrong place.
+            //
+            // Cities cannot be matched that way: LinkedIn names them
+            // "Redmond, Washington, United States", never "Redmond". So a
+            // city match accepts a hit whose name begins with the city
+            // followed by a comma, and the matched name is reported back so
+            // a consumer can see what was actually counted.
+            const hit = elements.find((element) => {
+                const text = extractHitText(element).toLowerCase();
+                return exact ? text === wanted : (text === wanted || text.startsWith(`${wanted},`));
+            });
+            const geoId = extractGeoId(hit ?? null);
+            if (geoId) resolved = { geoId, matchedName: extractHitText(hit) };
         }
 
-        this.geoCache.set(key, geoId);
-        if (!geoId) log.debug(`No LinkedIn geo ID resolved for "${country}"; it will be skipped.`);
-        return geoId;
+        this.geoCache.set(key, resolved);
+        if (!resolved) log.debug(`No LinkedIn geo ID resolved for "${query}"; it will be skipped.`);
+        return resolved;
     }
 
     /**
@@ -305,8 +317,17 @@ export class VoyagerClient {
      * @param {Record<string, string|null>} mapping
      */
     primeGeoCache(mapping = {}) {
-        for (const [country, geoId] of Object.entries(mapping)) {
-            this.geoCache.set(country.toLowerCase(), geoId);
+        for (const [key, value] of Object.entries(mapping)) {
+            // Tolerate the older cache format, which stored a bare ID string.
+            const entry = typeof value === 'string' ? { geoId: value, matchedName: null } : value;
+            if (!entry?.geoId) continue;
+            // Keys are stored with the match-mode prefix resolveGeoId looks
+            // them up by. An unprefixed key comes from a cache written before
+            // city lookups existed, where every entry was an exact country
+            // match - without this it would be primed under a key nothing
+            // ever reads, and every country would be re-resolved from scratch.
+            const prefixed = /^[cp]:/.test(key) ? key : `c:${key}`;
+            this.geoCache.set(prefixed.toLowerCase(), entry);
         }
     }
 
@@ -321,7 +342,7 @@ export class VoyagerClient {
      * @returns {Record<string, string>}
      */
     exportGeoCache() {
-        return Object.fromEntries([...this.geoCache].filter(([, geoId]) => geoId));
+        return Object.fromEntries([...this.geoCache].filter(([, entry]) => entry?.geoId));
     }
 
     /**

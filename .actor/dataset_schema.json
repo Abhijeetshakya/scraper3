@@ -184,7 +184,7 @@
                     "null"
                 ],
                 "title": "Office Locations",
-                "description": "Every office location the page declares, not just the HQ. Compare against countryBreakdown: declared offices are where a company says it operates, the breakdown is where its staff actually are, and the gap between the two is usually the interesting part."
+                "description": "Every office the company declares, as structured campuses: { street, city, region, postalCode, countryCode, country, formattedAddress, isPrimary, mapUrl, addressLines }. Compare against countryBreakdown: declared offices are where a company says it operates, the breakdown is where its staff actually are, and the gap between the two is usually the interesting part."
             },
             "phone": {
                 "type": [
@@ -312,6 +312,140 @@
                 "title": "From Cache",
                 "description": "Present and true when the row was served from a cached scrape inside the configured TTL rather than re-fetched.",
                 "example": true
+            },
+            "locationIndex": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Location #",
+                "description": "Zero-based index of this campus within the company's declared office list. Location mode only.",
+                "example": 0
+            },
+            "locationCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Total Locations",
+                "description": "How many offices this company declares in total. Every row for a company carries the same value, so one row tells you the company's footprint size.",
+                "example": 45
+            },
+            "isPrimaryLocation": {
+                "type": [
+                    "boolean",
+                    "null"
+                ],
+                "title": "Primary",
+                "description": "True for the office LinkedIn tags 'Primary' \u2014 the headquarters. Exactly one per company, normally.",
+                "example": true
+            },
+            "street": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Street",
+                "description": "Street address, including any building, tower or floor lines LinkedIn lists above the locality.",
+                "example": "1 Microsoft Way"
+            },
+            "city": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "City",
+                "description": "City or locality.",
+                "example": "Redmond"
+            },
+            "region": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Region",
+                "description": "State, province or region. Null for countries that do not use one (German addresses, for example).",
+                "example": "Washington"
+            },
+            "postalCode": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Postal Code",
+                "description": "Postal or ZIP code. Handles multi-token forms such as UK 'RG6 1WG' and Canadian 'L5N 8L9'.",
+                "example": "98052"
+            },
+            "countryCode": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Country Code",
+                "description": "ISO 3166-1 alpha-2 code exactly as LinkedIn publishes it.",
+                "example": "US"
+            },
+            "country": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Country",
+                "description": "Country name resolved from the ISO code via the runtime's own ICU data.",
+                "example": "United States"
+            },
+            "formattedAddress": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Full Address",
+                "description": "All address lines joined into one readable string.",
+                "example": "1 Microsoft Way, Redmond, Washington 98052, US"
+            },
+            "mapUrl": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Map Link",
+                "description": "The 'Get directions' map URL LinkedIn publishes for this campus."
+            },
+            "employeesInCountry": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Employees in Country",
+                "description": "Headcount in this campus's country, joined from the company's country sweep. Country-level, not campus-level: every campus in the same country carries the same figure, and a country with several offices does not tell you how they split.",
+                "example": 118000
+            },
+            "percentOfWorkforceInCountry": {
+                "type": [
+                    "number",
+                    "null"
+                ],
+                "title": "% of Workforce in Country",
+                "description": "This country's share of the company's total LinkedIn headcount.",
+                "example": 50.9
+            },
+            "employeesAtLocation": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Employees at Location",
+                "description": "Headcount in this campus's own metro area. Only present when 'Count employees per location' is enabled, and null where the metro could not be resolved.",
+                "example": 9400
+            },
+            "locationGeoName": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Matched Metro",
+                "description": "The metro LinkedIn actually matched for employeesAtLocation \u2014 'Redmond' resolves to 'Redmond, Washington, United States'. Reported so the number can be checked rather than trusted.",
+                "example": "Redmond, Washington, United States"
             }
         }
     },
@@ -408,6 +542,54 @@
                     "locations": {
                         "label": "Declared offices",
                         "format": "array"
+                    }
+                }
+            }
+        },
+        "campuses": {
+            "title": "Campuses",
+            "description": "One row per declared office. Requires Output Mode = one row per location.",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "city",
+                    "region",
+                    "country",
+                    "formattedAddress",
+                    "isPrimaryLocation",
+                    "employeesAtLocation",
+                    "employeesInCountry",
+                    "percentOfWorkforceInCountry",
+                    "locationCount",
+                    "mapUrl"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "isPrimaryLocation": {
+                        "label": "HQ",
+                        "format": "boolean"
+                    },
+                    "employeesAtLocation": {
+                        "label": "At metro",
+                        "format": "number"
+                    },
+                    "employeesInCountry": {
+                        "label": "In country",
+                        "format": "number"
+                    },
+                    "percentOfWorkforceInCountry": {
+                        "label": "% of staff",
+                        "format": "number"
+                    },
+                    "locationCount": {
+                        "label": "Offices",
+                        "format": "number"
+                    },
+                    "mapUrl": {
+                        "label": "Map",
+                        "format": "link"
                     }
                 }
             }

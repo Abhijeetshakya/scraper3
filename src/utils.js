@@ -268,6 +268,110 @@ export function finalizeBreakdown(rows, total) {
 }
 
 /**
+ * ISO 3166-1 alpha-2 code to English country name.
+ *
+ * Uses the runtime's own ICU data rather than a hardcoded table - 250 country
+ * names written from memory is 250 chances to be quietly wrong, and LinkedIn
+ * publishes campus countries as bare two-letter codes.
+ *
+ * @param {string|null} code
+ * @returns {string|null}
+ */
+let regionDisplayNames = null;
+try {
+    regionDisplayNames = new Intl.DisplayNames(['en'], { type: 'region' });
+} catch {
+    regionDisplayNames = null; // Node build without full ICU; codes pass through.
+}
+
+export function countryNameFromCode(code) {
+    if (!code || !/^[A-Za-z]{2}$/.test(code)) return null;
+    try {
+        const name = regionDisplayNames?.of(code.toUpperCase());
+        // Intl does not throw on an unknown code: it echoes the input back, or
+        // returns the placeholder "Unknown Region". Both are non-answers.
+        if (!name || name === code.toUpperCase() || /^unknown/i.test(name)) return null;
+        return name;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Split a campus's address lines into components.
+ *
+ * LinkedIn renders each office as one to three lines, where the last line is
+ * always the locality: "City, Region Postal, CC". Validated against all 45
+ * Microsoft campuses, which covers the formats that actually break naive
+ * parsers - UK ("Reading, Berkshire RG6 1WG, GB") and Canadian ("Mississauga,
+ * Ontario L5N 8L9, CA") postcodes are two tokens, Danish addresses lead with
+ * the postal code ("2800 Kongens Lyngby, DK"), German ones carry no region at
+ * all, and Thai offices are written in Thai script.
+ *
+ * @param {string[]} lines
+ * @returns {{street: string|null, city: string|null, region: string|null,
+ *            postalCode: string|null, countryCode: string|null,
+ *            country: string|null, formattedAddress: string|null}}
+ */
+export function parseAddressLines(lines) {
+    const clean = (lines ?? []).map((line) => cleanText(line)).filter(Boolean);
+    const empty = {
+        street: null, city: null, region: null, postalCode: null,
+        countryCode: null, country: null, formattedAddress: null,
+    };
+    if (clean.length === 0) return empty;
+
+    const formattedAddress = clean.join(', ');
+    const locality = clean[clean.length - 1];
+    // Middle lines are building, tower or floor names; they belong with the
+    // street, not discarded.
+    const street = clean.length > 1 ? clean.slice(0, -1).join(', ') : null;
+
+    const parts = locality.split(',').map((part) => part.trim()).filter(Boolean);
+    let countryCode = null;
+    if (parts.length > 1 && /^[A-Za-z]{2}$/.test(parts[parts.length - 1])) {
+        countryCode = parts.pop().toUpperCase();
+    }
+
+    // Trailing tokens containing a digit form the postal code. Taking only the
+    // last token would split "RG6 1WG" and "L5N 8L9" down the middle.
+    const splitPostal = (segment) => {
+        const tokens = segment.split(/\s+/);
+        const postal = [];
+        while (tokens.length > 0 && /\d/.test(tokens[tokens.length - 1])) postal.unshift(tokens.pop());
+        return { rest: tokens.join(' ') || null, postal: postal.join(' ') || null };
+    };
+
+    let city = null;
+    let region = null;
+    let postalCode = null;
+
+    if (parts.length >= 2) {
+        [city] = parts;
+        const tail = splitPostal(parts.slice(1).join(', '));
+        region = tail.rest;
+        postalCode = tail.postal;
+    } else if (parts.length === 1) {
+        const leadingPostal = parts[0].match(/^(\d{3,6})\s+(.+)$/);
+        if (leadingPostal) {
+            [, postalCode, city] = leadingPostal;
+        } else {
+            const tail = splitPostal(parts[0]);
+            city = tail.rest;
+            postalCode = tail.postal;
+        }
+    }
+
+    // A "region" with no letters in it is a postal fragment, not a region.
+    if (region && !/[\p{L}]/u.test(region)) {
+        postalCode = [region, postalCode].filter(Boolean).join(' ');
+        region = null;
+    }
+
+    return { street, city, region, postalCode, countryCode, country: countryNameFromCode(countryCode), formattedAddress };
+}
+
+/**
  * Check whether a listed website's domain actually resolves.
  *
  * DNS rather than an HTTP request on purpose: it is one UDP round trip, it does
@@ -294,6 +398,75 @@ export async function checkWebsiteStatus(website) {
     } catch {
         return 'unresolved';
     }
+}
+
+/**
+ * Expand one company row into one row per declared campus.
+ *
+ * The company's identity is repeated on every row so each stands alone in a
+ * spreadsheet, and the address is broken into components so rows can be
+ * filtered and grouped by country, region or city without re-parsing a string.
+ *
+ * `employeesInCountry` comes from the country sweep that already ran once for
+ * the company, so it costs nothing extra - every campus in Germany carries
+ * Microsoft's German headcount. `employeesAtLocation` is the metro-level figure
+ * and is opt-in, because it costs its own request per campus.
+ *
+ * A company with no declared offices still yields one row, with the campus
+ * fields null. Dropping it would silently lose the company from the output.
+ *
+ * @param {object} row - A finished company row
+ * @returns {object[]}
+ */
+export function expandToLocationRows(row) {
+    const {
+        locations, countryBreakdown, affiliatedCompanies, similarCompanies,
+        recentUpdates, featuredEmployees, specialties, countryScan, ...company
+    } = row;
+
+    const byCountry = new Map(
+        (countryBreakdown ?? []).map((entry) => [entry.country?.toLowerCase(), entry]),
+    );
+    const campuses = Array.isArray(locations) ? locations : [];
+
+    const base = {
+        ...company,
+        locationCount: campuses.length,
+        totalEmployeesOnLinkedIn: row.totalEmployeesOnLinkedIn ?? null,
+    };
+
+    if (campuses.length === 0) {
+        return [{
+            ...base,
+            locationIndex: null,
+            isPrimaryLocation: null,
+            street: null, city: null, region: null, postalCode: null,
+            countryCode: null, country: null, formattedAddress: null, mapUrl: null,
+            employeesInCountry: null, employeesAtLocation: null, locationGeoName: null,
+            error: row.error ?? 'No office locations are declared on this company page.',
+        }];
+    }
+
+    return campuses.map((campus, index) => {
+        const countryRow = byCountry.get(campus.country?.toLowerCase());
+        return {
+            ...base,
+            locationIndex: index,
+            isPrimaryLocation: campus.isPrimary,
+            street: campus.street,
+            city: campus.city,
+            region: campus.region,
+            postalCode: campus.postalCode,
+            countryCode: campus.countryCode,
+            country: campus.country,
+            formattedAddress: campus.formattedAddress,
+            mapUrl: campus.mapUrl,
+            employeesInCountry: countryRow?.employeeCount ?? null,
+            percentOfWorkforceInCountry: countryRow?.percentOfTotal ?? null,
+            employeesAtLocation: campus.employeesAtLocation ?? null,
+            locationGeoName: campus.locationGeoName ?? null,
+        };
+    });
 }
 
 /**
