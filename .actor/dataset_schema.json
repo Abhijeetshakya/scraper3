@@ -1,0 +1,416 @@
+{
+    "actorSpecification": 1,
+    "fields": {
+        "type": "object",
+        "properties": {
+            "companyUrl": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Company URL",
+                "description": "Canonical LinkedIn company, showcase or school URL, with tracking parameters and locale subdomains stripped.",
+                "example": "https://www.linkedin.com/company/microsoft"
+            },
+            "companyId": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Company Slug",
+                "description": "The public slug from the URL. Stable, human-readable, and the key this actor deduplicates and caches on.",
+                "example": "microsoft"
+            },
+            "companyIdNumeric": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Numeric Organization ID",
+                "description": "LinkedIn's internal numeric organization ID. Every authenticated lookup keys on this, so a company with no numeric ID cannot get a country breakdown.",
+                "example": "1035"
+            },
+            "pageType": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Page Type",
+                "description": "'company', 'showcase' or 'school'. Showcase pages are sub-brands of a parent company and generally carry far fewer employees than the parent.",
+                "example": "company"
+            },
+            "success": {
+                "type": [
+                    "boolean",
+                    "null"
+                ],
+                "title": "Success",
+                "description": "Whether the company page was fetched and parsed. Always set, on every row.",
+                "example": true
+            },
+            "error": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Error",
+                "description": "Short explanation when something failed. Set even on success: true rows when only the country breakdown failed, so a partial result is never mistaken for a complete one."
+            },
+            "name": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Name",
+                "description": "Display name of the company.",
+                "example": "Microsoft"
+            },
+            "tagline": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Tagline",
+                "description": "The short one-line headline under the company name.",
+                "example": "We're on a mission to empower every person and every organization on the planet to achieve more."
+            },
+            "about": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "About",
+                "description": "Full 'About' text from the company page."
+            },
+            "logoUrl": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Logo",
+                "description": "Direct URL to the company logo image.",
+                "example": "https://media.licdn.com/dms/image/logo.png"
+            },
+            "coverImageUrl": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Cover Image",
+                "description": "Direct URL to the page's banner/cover image."
+            },
+            "industry": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Industry",
+                "description": "LinkedIn's industry classification for the company.",
+                "example": "Software Development"
+            },
+            "companyType": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Company Type",
+                "description": "Public Company, Privately Held, Nonprofit, Partnership, Self-Employed, Government Agency, and so on.",
+                "example": "Public Company"
+            },
+            "companySizeRange": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Company Size Range",
+                "description": "LinkedIn's bucketed size band, exactly as displayed. This is a band, not a number \u2014 use employeeCount for arithmetic.",
+                "example": "10,001+ employees"
+            },
+            "employeeCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Employee Count",
+                "description": "LinkedIn's exact count of members who list this company. Not verified corporate headcount: it counts LinkedIn profiles, so it undercounts workforces that are not on the platform and overcounts stale profiles.",
+                "example": 238000
+            },
+            "foundedYear": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Founded",
+                "description": "Year the company was founded.",
+                "example": 1975
+            },
+            "specialties": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Specialties",
+                "description": "Self-declared specialty and focus tags from the About panel. Absent when the section was switched off in the input."
+            },
+            "stockSymbol": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Stock Symbol",
+                "description": "Ticker symbol, for public companies.",
+                "example": "MSFT"
+            },
+            "headquarters": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Headquarters",
+                "description": "HQ city/region as listed on the page.",
+                "example": "Redmond, Washington"
+            },
+            "address": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Address",
+                "description": "Full structured HQ address where the company publishes one."
+            },
+            "locations": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Office Locations",
+                "description": "Every office location the page declares, not just the HQ. Compare against countryBreakdown: declared offices are where a company says it operates, the breakdown is where its staff actually are, and the gap between the two is usually the interesting part."
+            },
+            "phone": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Phone",
+                "description": "Listed phone number."
+            },
+            "website": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Website",
+                "description": "Listed website URL, unwrapped from LinkedIn's outbound redirector.",
+                "example": "https://news.microsoft.com/"
+            },
+            "websiteStatus": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Website Status",
+                "description": "'valid', 'unresolved' or 'invalid' \u2014 whether the listed domain still resolves in DNS. Only present when 'Verify Website Domain' is enabled.",
+                "example": "valid"
+            },
+            "followerCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Followers",
+                "description": "LinkedIn page follower count.",
+                "example": 24000000
+            },
+            "jobOpeningsCount": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Open Jobs",
+                "description": "Number of open jobs posted on the page.",
+                "example": 2500
+            },
+            "recentUpdates": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Recent Posts",
+                "description": "Recent posts: { text, date, likes, engagement }. Engagement splits reactions from comments rather than collapsing them, because the ratio is what separates a post that landed from one that was merely seen."
+            },
+            "affiliatedCompanies": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Affiliated Companies",
+                "description": "Subsidiary, regional, showcase and acquired pages linked from this page: { name, url }."
+            },
+            "similarCompanies": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Similar Companies",
+                "description": "LinkedIn's own 'similar pages' suggestions: { name, url }. A quick way to grow a competitor set from one seed company."
+            },
+            "featuredEmployees": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Featured Employees",
+                "description": "The small sample of profiles LinkedIn surfaces publicly: { name, title, photoUrl, profileUrl }. A sample LinkedIn chose to show, not a roster."
+            },
+            "countryBreakdown": {
+                "type": [
+                    "array",
+                    "null"
+                ],
+                "title": "Employees by Country",
+                "description": "Employee headcount per country: { country, employeeCount, percentOfTotal }, sorted by headcount. Requires a session cookie. Counts members who list this company AND a location \u2014 treat as a directional signal, not verified headcount."
+            },
+            "totalEmployeesOnLinkedIn": {
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "title": "Total Employees on LinkedIn",
+                "description": "The baseline denominator percentOfTotal is computed against: LinkedIn's own count of members listing this company. Per-country figures will not sum to it exactly \u2014 members with no listed location land in the total and in no country bucket.",
+                "example": 238000
+            },
+            "countryScan": {
+                "type": [
+                    "object",
+                    "null"
+                ],
+                "title": "Country Scan Metadata",
+                "description": "{ countriesQueried, stopReason, coverage }. stopReason distinguishes a sweep that exhausted the country list from one truncated by coverage, an empty tail, or the per-company ceiling \u2014 so a partial breakdown is never mistaken for a complete one. coverage is the share of the total that was placed in some country."
+            },
+            "dataFetchedAt": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Fetched At",
+                "description": "ISO 8601 timestamp of the scrape."
+            },
+            "sourceType": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "title": "Source Type",
+                "description": "'public' when every field came from the guest page, 'authenticated' when a session cookie was used to obtain the country breakdown.",
+                "example": "authenticated"
+            },
+            "fromCache": {
+                "type": [
+                    "boolean",
+                    "null"
+                ],
+                "title": "From Cache",
+                "description": "Present and true when the row was served from a cached scrape inside the configured TTL rather than re-fetched.",
+                "example": true
+            }
+        }
+    },
+    "views": {
+        "overview": {
+            "title": "Company overview",
+            "description": "Firmographics, contact details and growth signals.",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "companyUrl",
+                    "industry",
+                    "companyType",
+                    "companySizeRange",
+                    "employeeCount",
+                    "headquarters",
+                    "foundedYear",
+                    "website",
+                    "followerCount",
+                    "jobOpeningsCount",
+                    "logoUrl",
+                    "success"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "logoUrl": {
+                        "label": "Logo",
+                        "format": "image"
+                    },
+                    "companyUrl": {
+                        "label": "LinkedIn",
+                        "format": "link"
+                    },
+                    "website": {
+                        "label": "Website",
+                        "format": "link"
+                    },
+                    "employeeCount": {
+                        "label": "Employees",
+                        "format": "number"
+                    },
+                    "followerCount": {
+                        "label": "Followers",
+                        "format": "number"
+                    },
+                    "jobOpeningsCount": {
+                        "label": "Open jobs",
+                        "format": "number"
+                    },
+                    "foundedYear": {
+                        "label": "Founded",
+                        "format": "number"
+                    },
+                    "success": {
+                        "label": "OK",
+                        "format": "boolean"
+                    }
+                }
+            }
+        },
+        "workforce": {
+            "title": "Global workforce",
+            "description": "Employee distribution by country, with the declared offices to compare it against.",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "companyIdNumeric",
+                    "totalEmployeesOnLinkedIn",
+                    "countryBreakdown",
+                    "countryScan",
+                    "locations",
+                    "headquarters",
+                    "sourceType",
+                    "error"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "totalEmployeesOnLinkedIn": {
+                        "label": "Total on LinkedIn",
+                        "format": "number"
+                    },
+                    "countryBreakdown": {
+                        "label": "By country",
+                        "format": "array"
+                    },
+                    "countryScan": {
+                        "label": "Scan",
+                        "format": "object"
+                    },
+                    "locations": {
+                        "label": "Declared offices",
+                        "format": "array"
+                    }
+                }
+            }
+        }
+    }
+}

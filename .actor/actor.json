@@ -1,0 +1,15 @@
+{
+    "actorSpecification": 1,
+    "name": "linkedin-company-workforce-intelligence",
+    "title": "LinkedIn Company Workforce & Profile Intelligence",
+    "description": "Full LinkedIn company profiles plus a complete employee-by-country breakdown - not just LinkedIn's default top-5 locations.",
+    "version": "1.0",
+    "meta": {
+        "templateId": "project-empty"
+    },
+    "input": "./input_schema.json",
+    "output": "./output_schema.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    }
+}

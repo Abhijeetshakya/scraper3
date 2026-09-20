@@ -1,0 +1,18 @@
+{
+  "name": "linkedin-company-workforce-intelligence",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Apify actor returning a full LinkedIn company profile plus a complete employee-by-country breakdown, beyond LinkedIn's default top-5 locations.",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node src/test.js"
+  },
+  "dependencies": {
+    "apify": "^3.2.6",
+    "crawlee": "^3.12.1",
+    "cheerio": "^1.0.0",
+    "got-scraping": "^4.0.6"
+  },
+  "author": "",
+  "license": "ISC"
+}

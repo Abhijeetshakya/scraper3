@@ -1,0 +1,152 @@
+{
+    "title": "LinkedIn Company Workforce & Profile Intelligence Input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "companyUrls": {
+            "title": "Company URLs",
+            "type": "array",
+            "description": "LinkedIn company, showcase or school URLs — or bare slugs. All of these work: 'microsoft', 'linkedin.com/company/microsoft', 'https://www.linkedin.com/company/microsoft/about/'. Duplicates and locale subdomains are collapsed to one row.",
+            "editor": "stringList",
+            "prefill": [
+                "https://www.linkedin.com/company/microsoft"
+            ],
+            "sectionCaption": "Companies"
+        },
+        "sessionCookie": {
+            "title": "LinkedIn Session Cookie (li_at)",
+            "type": "string",
+            "description": "⚠️ Required only for the country breakdown. LinkedIn shows a company's top-5 employee locations publicly and gates everything beyond that behind a login, so a full per-country breakdown needs an authenticated session. Paste the value of the 'li_at' cookie from a logged-in LinkedIn session. Every other field in the output works without it. Use a secondary account: automated requests can get an account restricted.",
+            "editor": "textfield",
+            "isSecret": true,
+            "sectionCaption": "Authentication"
+        },
+        "includeCountryBreakdown": {
+            "title": "Employee Count by Country",
+            "type": "boolean",
+            "description": "The headline feature: employee headcount per country, beyond LinkedIn's default top-5 display. Needs the session cookie above. This costs one authenticated request per country, so it is by far the slowest part of a run — see 'Country scan' below to bound it.",
+            "default": true,
+            "sectionCaption": "Output sections"
+        },
+        "includeLocations": {
+            "title": "Declared Office Locations",
+            "type": "boolean",
+            "description": "Every office location the company lists on its page, not just the HQ. Compare against the country breakdown to see where a company says it operates versus where its staff actually are.",
+            "default": true
+        },
+        "includeSpecialties": {
+            "title": "Specialties",
+            "type": "boolean",
+            "description": "Self-declared specialty and focus tags from the About panel.",
+            "default": true
+        },
+        "includeAffiliatedCompanies": {
+            "title": "Affiliated Companies",
+            "type": "boolean",
+            "description": "Subsidiary, regional, showcase and acquired pages linked from this company's page.",
+            "default": true
+        },
+        "includeSimilarCompanies": {
+            "title": "Similar Companies",
+            "type": "boolean",
+            "description": "LinkedIn's own 'similar pages' / 'people also viewed' suggestions. Useful for building a competitor set from one seed company.",
+            "default": false
+        },
+        "includeRecentUpdates": {
+            "title": "Recent Posts",
+            "type": "boolean",
+            "description": "Recent posts from the page's activity feed, with date and engagement counts.",
+            "default": false
+        },
+        "includeFeaturedEmployees": {
+            "title": "Featured Employees",
+            "type": "boolean",
+            "description": "The small sample of employee profiles LinkedIn surfaces publicly. This is a sample LinkedIn chose to show, not a roster — the country breakdown is the workforce signal.",
+            "default": false
+        },
+        "countries": {
+            "title": "Countries to Scan",
+            "type": "array",
+            "description": "Restrict the country sweep to these countries. Leave empty to sweep a built-in list of 125 countries ordered by LinkedIn membership. Setting this is the single most effective way to cut run time when you already know which markets you care about.",
+            "editor": "stringList",
+            "default": [],
+            "sectionCaption": "Country scan"
+        },
+        "countryScanCoveragePercent": {
+            "title": "Stop After Coverage (%)",
+            "type": "integer",
+            "description": "Stop sweeping once this percentage of the company's total LinkedIn headcount has been placed in a country. Below 100 on purpose: members who list no location are in the total but in no country bucket, so a 100% bar would always walk the full list.",
+            "editor": "number",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 97
+        },
+        "maxCountriesScanned": {
+            "title": "Max Countries Per Company",
+            "type": "integer",
+            "description": "Hard ceiling on countries queried per company, regardless of coverage. Bounds worst-case run time.",
+            "editor": "number",
+            "minimum": 1,
+            "default": 130
+        },
+        "maxAuthenticatedRequests": {
+            "title": "Authenticated Request Budget",
+            "type": "integer",
+            "description": "Hard cap on authenticated LinkedIn requests for the whole run. Once spent, remaining companies are returned with public fields only rather than pushing the account further. Leave empty for no cap.",
+            "editor": "number",
+            "minimum": 1
+        },
+        "requestDelayMs": {
+            "title": "Delay Between Authenticated Requests (ms)",
+            "type": "integer",
+            "description": "Spacing between authenticated LinkedIn requests, jittered ±20%. 1500–2000ms is the safe band; lowering it raises the chance of a rate-limit or an account restriction. Applies to the authenticated lane only — public pages are governed by concurrency.",
+            "editor": "number",
+            "minimum": 0,
+            "default": 1750
+        },
+        "verifyWebsite": {
+            "title": "Verify Website Domain",
+            "type": "boolean",
+            "description": "Check whether the listed website's domain still resolves in DNS, and report it as websiteStatus. A dead domain on a live LinkedIn page is a real signal — acquired, folded, or rebranded. Costs one DNS lookup per company, no HTTP request.",
+            "default": false,
+            "sectionCaption": "Run control"
+        },
+        "cacheTtlDays": {
+            "title": "Cache TTL (days)",
+            "type": "integer",
+            "description": "Reuse a stored row for a company scraped within this many days instead of re-fetching it. Firmographics and country distribution change slowly, so this mostly saves authenticated request budget. Set to 0 to always re-scrape.",
+            "editor": "number",
+            "minimum": 0,
+            "default": 7
+        },
+        "proxyConfiguration": {
+            "title": "Proxy Configuration",
+            "type": "object",
+            "description": "Residential proxies are strongly recommended, and close to mandatory when a session cookie is used: authenticated LinkedIn traffic from a datacenter IP is a strong anomaly signal. The authenticated lane pins one sticky proxy session for the whole run and never rotates inside it.",
+            "editor": "proxy",
+            "default": {
+                "useApifyProxy": true
+            },
+            "sectionCaption": "Proxy and performance"
+        },
+        "maxConcurrency": {
+            "title": "Max Concurrency (public pages)",
+            "type": "integer",
+            "description": "Requests in flight for the public-page phase. Does not affect the authenticated lane, which is always serialised.",
+            "editor": "number",
+            "minimum": 1,
+            "default": 8
+        },
+        "maxRequestRetries": {
+            "title": "Max Request Retries",
+            "type": "integer",
+            "description": "How many times to retry a blocked or failed public page before giving up and returning the row with success: false.",
+            "editor": "number",
+            "minimum": 0,
+            "default": 4
+        }
+    },
+    "required": [
+        "companyUrls"
+    ]
+}

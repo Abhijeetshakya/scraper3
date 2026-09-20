@@ -1,0 +1,13 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Company Workforce & Profile Intelligence Output",
+    "description": "One row per company: full profile plus employee distribution by country.",
+    "properties": {
+        "companies": {
+            "type": "string",
+            "title": "Company profiles",
+            "description": "All scraped company profiles and country breakdowns in the default dataset.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        }
+    }
+}
